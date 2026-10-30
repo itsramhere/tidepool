@@ -1,0 +1,12 @@
+# Development configuration for one Tidepool node. Run from the repository
+# root: go run ./cmd/tidepoold --config deploy/dev.yaml
+node_id: node1
+listen: "127.0.0.1:7100"
+data_dir: data/node1
+fsync: always
+jwt_secret: dev-secret-change-me
+admin_token: dev-admin-token
+rules_file: deploy/rules.yaml
+max_ops_per_push: 1000
+session_send_buffer: 1024
+peers: []

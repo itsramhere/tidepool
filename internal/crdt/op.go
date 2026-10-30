@@ -88,6 +88,14 @@ func ValidateActor(a ActorID) error {
 	return nil
 }
 
+// ValidateCollection checks the collection name format.
+func ValidateCollection(coll string) error {
+	if !collRe.MatchString(coll) {
+		return fmt.Errorf("%w: collection %q does not match %s", ErrInvalid, coll, collRe)
+	}
+	return nil
+}
+
 // ValidateKey checks collection and document ID formats.
 func ValidateKey(k DocKey) error {
 	if !collRe.MatchString(k.Coll) {

@@ -1,0 +1,17 @@
+# Tidepool rules file: collections with their field types, and per-collection
+# CEL rules. Rules are parsed from M5 on but only evaluated from M7 — until
+# then every read and write is allowed.
+collections:
+  cards:
+    fields:
+      title: register
+      status: register
+      board: register
+      owner: register
+      votes: counter
+      labels: set
+      checklist: list
+      description: text
+    rules:
+      read: "true"
+      write: "true"
