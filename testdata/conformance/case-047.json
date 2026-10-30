@@ -1,0 +1,1551 @@
+{
+  "schema": {
+    "body": "text",
+    "checklist": "list",
+    "labels": "set",
+    "title": "register",
+    "votes": "counter"
+  },
+  "ops": [
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 1
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 1,
+      "field": "votes",
+      "kind": "inc",
+      "delta": -2
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 1
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 1,
+      "field": "labels",
+      "kind": "add",
+      "value": "delta"
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 2
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 2,
+      "field": "body",
+      "kind": "ins",
+      "value": "b"
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 3
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 3,
+      "field": "checklist",
+      "kind": "ins",
+      "value": 155.25
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 1
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 1,
+      "field": "checklist",
+      "kind": "ins",
+      "value": true
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 2
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 2,
+      "field": "body",
+      "kind": "ins",
+      "value": "f"
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 3
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 3,
+      "field": "body",
+      "kind": "del",
+      "ref": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 2
+      }
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 4
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 4,
+      "field": "title",
+      "kind": "set",
+      "value": "bravo"
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 5
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 5,
+      "field": "labels",
+      "kind": "add",
+      "value": "charlie"
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 6
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 6,
+      "field": "checklist",
+      "kind": "ins",
+      "value": null,
+      "ref": {
+        "actor": "0123456789abcdef",
+        "seq": 3
+      }
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 7
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 7,
+      "field": "title",
+      "kind": "set",
+      "value": null
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 4
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 4,
+      "field": "title",
+      "kind": "set",
+      "value": false
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 5
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 5,
+      "field": "votes",
+      "kind": "inc",
+      "delta": 3
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 6
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 6,
+      "field": "votes",
+      "kind": "inc",
+      "delta": -5
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 8
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 8,
+      "field": "checklist",
+      "kind": "del",
+      "ref": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 1
+      }
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 2
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 9,
+      "field": "votes",
+      "kind": "inc",
+      "delta": -1
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 3
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 10,
+      "field": "body",
+      "kind": "del",
+      "ref": {
+        "actor": "0123456789abcdef",
+        "seq": 2
+      }
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 4
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 11,
+      "field": "labels",
+      "kind": "add",
+      "value": "echo"
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 5
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 12,
+      "field": "labels",
+      "kind": "rem",
+      "value": "charlie",
+      "observed": [
+        {
+          "actor": "0123456789abcdef",
+          "seq": 5
+        }
+      ]
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 6
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 13,
+      "field": "body",
+      "kind": "ins",
+      "value": "e"
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 7
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 14,
+      "field": "labels",
+      "kind": "rem",
+      "value": "delta",
+      "observed": [
+        {
+          "actor": "0123456789abcdef",
+          "seq": 1
+        }
+      ]
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 8
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 15,
+      "field": "body",
+      "kind": "del",
+      "ref": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 6
+      }
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 9
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 16,
+      "field": "labels",
+      "kind": "add",
+      "value": "delta"
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 10
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 17,
+      "field": "votes",
+      "kind": "inc",
+      "delta": 3
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 11
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 18,
+      "field": "body",
+      "kind": "ins",
+      "value": "g"
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 12
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 19,
+      "field": "body",
+      "kind": "del",
+      "ref": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 11
+      }
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 13
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 20,
+      "field": "body",
+      "kind": "ins",
+      "value": "g"
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 14
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 21,
+      "field": "title",
+      "kind": "set",
+      "value": "echo"
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 15
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 22,
+      "field": "title",
+      "kind": "set",
+      "value": "delta"
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 9
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 9,
+      "field": "votes",
+      "kind": "inc",
+      "delta": 2
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 10
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 10,
+      "field": "title",
+      "kind": "set",
+      "value": 171.25
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 11
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 11,
+      "field": "body",
+      "kind": "del",
+      "ref": {
+        "actor": "0123456789abcdef",
+        "seq": 2
+      }
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 7
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 7,
+      "field": "checklist",
+      "kind": "ins",
+      "value": "foxtrot"
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 8
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 8,
+      "field": "title",
+      "kind": "set",
+      "value": 16
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 9
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 9,
+      "field": "title",
+      "kind": "set",
+      "value": false
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 10
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 10,
+      "field": "title",
+      "kind": "set",
+      "value": false
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 11
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 11,
+      "field": "body",
+      "kind": "del",
+      "ref": {
+        "actor": "0123456789abcdef",
+        "seq": 2
+      }
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 12
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 12,
+      "field": "title",
+      "kind": "set",
+      "value": false
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 13
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 13,
+      "field": "body",
+      "kind": "ins",
+      "value": "a"
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 14
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 16,
+      "field": "votes",
+      "kind": "inc",
+      "delta": 5
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 15
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 17,
+      "field": "checklist",
+      "kind": "ins",
+      "value": "charlie",
+      "ref": {
+        "actor": "0123456789abcdef",
+        "seq": 3
+      }
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 16
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 18,
+      "field": "body",
+      "kind": "ins",
+      "value": "g"
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 17
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 19,
+      "field": "title",
+      "kind": "set",
+      "value": null
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 12
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 20,
+      "field": "votes",
+      "kind": "inc",
+      "delta": 2
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 13
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 21,
+      "field": "body",
+      "kind": "ins",
+      "value": "f"
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 14
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 22,
+      "field": "body",
+      "kind": "del",
+      "ref": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 13
+      }
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 18
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 20,
+      "field": "checklist",
+      "kind": "del",
+      "ref": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 15
+      }
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 19
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 21,
+      "field": "checklist",
+      "kind": "del",
+      "ref": {
+        "actor": "0123456789abcdef",
+        "seq": 3
+      }
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 20
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 22,
+      "field": "body",
+      "kind": "del",
+      "ref": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 13
+      }
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 21
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 23,
+      "field": "labels",
+      "kind": "rem",
+      "value": "echo",
+      "observed": [
+        {
+          "actor": "a1b2c3d4e5f60708",
+          "seq": 4
+        }
+      ]
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 22
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 24,
+      "field": "labels",
+      "kind": "add",
+      "value": "delta"
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 23
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 25,
+      "field": "votes",
+      "kind": "inc",
+      "delta": -2
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 24
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 26,
+      "field": "labels",
+      "kind": "add",
+      "value": "charlie"
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 15
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 27,
+      "field": "body",
+      "kind": "del",
+      "ref": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 16
+      }
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 16
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 28,
+      "field": "body",
+      "kind": "ins",
+      "value": "c"
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 17
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 29,
+      "field": "title",
+      "kind": "set",
+      "value": 20.25
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 18
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 30,
+      "field": "labels",
+      "kind": "add",
+      "value": "charlie"
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 19
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 31,
+      "field": "checklist",
+      "kind": "ins",
+      "value": false
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 16
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 32,
+      "field": "votes",
+      "kind": "inc",
+      "delta": -2
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 17
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 33,
+      "field": "title",
+      "kind": "set",
+      "value": "echo"
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 18
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 34,
+      "field": "checklist",
+      "kind": "del",
+      "ref": {
+        "actor": "0123456789abcdef",
+        "seq": 19
+      }
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 19
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 35,
+      "field": "body",
+      "kind": "del",
+      "ref": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 13
+      }
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 1
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 1,
+      "field": "body",
+      "kind": "ins",
+      "value": "a"
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 2
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 2,
+      "field": "votes",
+      "kind": "inc",
+      "delta": -3
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 3
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 9,
+      "field": "labels",
+      "kind": "rem",
+      "value": "delta",
+      "observed": [
+        {
+          "actor": "0123456789abcdef",
+          "seq": 1
+        }
+      ]
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 4
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 10,
+      "field": "body",
+      "kind": "ins",
+      "value": "c"
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 5
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 11,
+      "field": "body",
+      "kind": "ins",
+      "value": "b"
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 6
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 12,
+      "field": "labels",
+      "kind": "add",
+      "value": "foxtrot"
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 7
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 27,
+      "field": "body",
+      "kind": "del",
+      "ref": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 4
+      }
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 8
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 28,
+      "field": "labels",
+      "kind": "add",
+      "value": "echo"
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 9
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 29,
+      "field": "votes",
+      "kind": "inc",
+      "delta": -3
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 10
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 30,
+      "field": "title",
+      "kind": "set",
+      "value": "delta"
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 11
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 31,
+      "field": "votes",
+      "kind": "inc",
+      "delta": -2
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 12
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 32,
+      "field": "labels",
+      "kind": "rem",
+      "value": "echo",
+      "observed": [
+        {
+          "actor": "0f1e2d3c4b5a6978",
+          "seq": 8
+        }
+      ]
+    },
+    {
+      "id": {
+        "actor": "0f1e2d3c4b5a6978",
+        "seq": 13
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 33,
+      "field": "votes",
+      "kind": "inc",
+      "delta": 3
+    },
+    {
+      "id": {
+        "actor": "a1b2c3d4e5f60708",
+        "seq": 20
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 36,
+      "field": "votes",
+      "kind": "inc",
+      "delta": -3
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 25
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 27,
+      "field": "labels",
+      "kind": "add",
+      "value": "bravo"
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 26
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 28,
+      "field": "checklist",
+      "kind": "ins",
+      "value": true,
+      "ref": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 7
+      }
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 27
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 29,
+      "field": "labels",
+      "kind": "rem",
+      "value": "delta",
+      "observed": [
+        {
+          "actor": "deadbeefdeadbeef",
+          "seq": 22
+        }
+      ]
+    },
+    {
+      "id": {
+        "actor": "deadbeefdeadbeef",
+        "seq": 28
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 30,
+      "field": "title",
+      "kind": "set",
+      "value": 52.125
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 20
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 32,
+      "field": "votes",
+      "kind": "inc",
+      "delta": -4
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 21
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 33,
+      "field": "votes",
+      "kind": "inc",
+      "delta": -5
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 22
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 34,
+      "field": "labels",
+      "kind": "rem",
+      "value": "delta",
+      "observed": [
+        {
+          "actor": "deadbeefdeadbeef",
+          "seq": 22
+        }
+      ]
+    },
+    {
+      "id": {
+        "actor": "0123456789abcdef",
+        "seq": 23
+      },
+      "key": {
+        "coll": "cards",
+        "doc": "case47"
+      },
+      "lamport": 35,
+      "field": "labels",
+      "kind": "add",
+      "value": "foxtrot"
+    }
+  ],
+  "expectedValues": {
+    "body": "cfba",
+    "checklist": [
+      "foxtrot",
+      true,
+      null
+    ],
+    "labels": [
+      "bravo",
+      "charlie",
+      "delta",
+      "foxtrot"
+    ],
+    "title": "echo",
+    "votes": -14
+  },
+  "expectedSnapshot": {
+    "key": {
+      "coll": "cards",
+      "doc": "case47"
+    },
+    "vv": {
+      "0123456789abcdef": 23,
+      "0f1e2d3c4b5a6978": 13,
+      "a1b2c3d4e5f60708": 20,
+      "deadbeefdeadbeef": 28
+    },
+    "clock": {
+      "0123456789abcdef": 35,
+      "0f1e2d3c4b5a6978": 33,
+      "a1b2c3d4e5f60708": 36,
+      "deadbeefdeadbeef": 30
+    },
+    "maxLamport": 36,
+    "fields": {
+      "body": {
+        "type": "text",
+        "items": [
+          {
+            "id": {
+              "actor": "0123456789abcdef",
+              "seq": 16
+            },
+            "lamport": 28,
+            "value": "c",
+            "deleted": false
+          },
+          {
+            "id": {
+              "actor": "0123456789abcdef",
+              "seq": 13
+            },
+            "lamport": 21,
+            "value": "f",
+            "deleted": false
+          },
+          {
+            "id": {
+              "actor": "a1b2c3d4e5f60708",
+              "seq": 13
+            },
+            "lamport": 20,
+            "value": "g",
+            "deleted": true
+          },
+          {
+            "id": {
+              "actor": "deadbeefdeadbeef",
+              "seq": 16
+            },
+            "lamport": 18,
+            "value": "g",
+            "deleted": true
+          },
+          {
+            "id": {
+              "actor": "a1b2c3d4e5f60708",
+              "seq": 11
+            },
+            "lamport": 18,
+            "value": "g",
+            "deleted": true
+          },
+          {
+            "id": {
+              "actor": "deadbeefdeadbeef",
+              "seq": 13
+            },
+            "lamport": 13,
+            "value": "a",
+            "deleted": true
+          },
+          {
+            "id": {
+              "actor": "a1b2c3d4e5f60708",
+              "seq": 6
+            },
+            "lamport": 13,
+            "value": "e",
+            "deleted": true
+          },
+          {
+            "id": {
+              "actor": "0f1e2d3c4b5a6978",
+              "seq": 5
+            },
+            "lamport": 11,
+            "value": "b",
+            "deleted": false
+          },
+          {
+            "id": {
+              "actor": "0f1e2d3c4b5a6978",
+              "seq": 4
+            },
+            "lamport": 10,
+            "value": "c",
+            "deleted": true
+          },
+          {
+            "id": {
+              "actor": "deadbeefdeadbeef",
+              "seq": 2
+            },
+            "lamport": 2,
+            "value": "f",
+            "deleted": true
+          },
+          {
+            "id": {
+              "actor": "0123456789abcdef",
+              "seq": 2
+            },
+            "lamport": 2,
+            "value": "b",
+            "deleted": true
+          },
+          {
+            "id": {
+              "actor": "0f1e2d3c4b5a6978",
+              "seq": 1
+            },
+            "lamport": 1,
+            "value": "a",
+            "deleted": false
+          }
+        ]
+      },
+      "checklist": {
+        "type": "list",
+        "items": [
+          {
+            "id": {
+              "actor": "0123456789abcdef",
+              "seq": 19
+            },
+            "lamport": 31,
+            "value": false,
+            "deleted": true
+          },
+          {
+            "id": {
+              "actor": "deadbeefdeadbeef",
+              "seq": 7
+            },
+            "lamport": 7,
+            "value": "foxtrot",
+            "deleted": false
+          },
+          {
+            "id": {
+              "actor": "deadbeefdeadbeef",
+              "seq": 26
+            },
+            "lamport": 28,
+            "value": true,
+            "deleted": false
+          },
+          {
+            "id": {
+              "actor": "0123456789abcdef",
+              "seq": 3
+            },
+            "lamport": 3,
+            "value": 155.25,
+            "deleted": true
+          },
+          {
+            "id": {
+              "actor": "deadbeefdeadbeef",
+              "seq": 15
+            },
+            "lamport": 17,
+            "value": "charlie",
+            "deleted": true
+          },
+          {
+            "id": {
+              "actor": "0123456789abcdef",
+              "seq": 6
+            },
+            "lamport": 6,
+            "value": null,
+            "deleted": false
+          },
+          {
+            "id": {
+              "actor": "deadbeefdeadbeef",
+              "seq": 1
+            },
+            "lamport": 1,
+            "value": true,
+            "deleted": true
+          }
+        ]
+      },
+      "labels": {
+        "type": "set",
+        "elems": {
+          "bravo": [
+            {
+              "actor": "deadbeefdeadbeef",
+              "seq": 25
+            }
+          ],
+          "charlie": [
+            {
+              "actor": "0123456789abcdef",
+              "seq": 18
+            },
+            {
+              "actor": "deadbeefdeadbeef",
+              "seq": 24
+            }
+          ],
+          "delta": [
+            {
+              "actor": "a1b2c3d4e5f60708",
+              "seq": 9
+            }
+          ],
+          "foxtrot": [
+            {
+              "actor": "0123456789abcdef",
+              "seq": 23
+            },
+            {
+              "actor": "0f1e2d3c4b5a6978",
+              "seq": 6
+            }
+          ]
+        }
+      },
+      "title": {
+        "type": "register",
+        "lamport": 33,
+        "actor": "a1b2c3d4e5f60708",
+        "value": "echo"
+      },
+      "votes": {
+        "type": "counter",
+        "n": -14
+      }
+    }
+  }
+}
