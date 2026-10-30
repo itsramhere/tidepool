@@ -1,0 +1,8 @@
+/data/
+node_modules/
+dist/
+*.exe
+coverage.out
+DEVIATIONS.md
+NOTES.md
+PROGRESS.md
