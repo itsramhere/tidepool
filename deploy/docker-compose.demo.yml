@@ -1,0 +1,15 @@
+# Development-only overlay: permissive kanban rules and unauthenticated tokens.
+# Host ports remain loopback-only as defined in the base Compose file.
+services:
+  node1:
+    volumes:
+      - ./demo/node1.yaml:/etc/tidepool/node.yaml:ro
+      - ../examples/kanban/rules.yaml:/etc/tidepool/rules.yaml:ro
+  node2:
+    volumes:
+      - ./demo/node2.yaml:/etc/tidepool/node.yaml:ro
+      - ../examples/kanban/rules.yaml:/etc/tidepool/rules.yaml:ro
+  node3:
+    volumes:
+      - ./demo/node3.yaml:/etc/tidepool/node.yaml:ro
+      - ../examples/kanban/rules.yaml:/etc/tidepool/rules.yaml:ro

@@ -2,8 +2,54 @@ package crdt
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
+
+func TestAdaptiveIndexSnapshotRoundTripAfterLargeShift(t *testing.T) {
+	d := NewDocument(DocKey{Coll: "cards", Doc: "roundtrip"})
+	sch := Schema{"text": FieldText}
+	actor := ActorID("aaaaaaaaaaaaaaaa")
+	for seq := uint64(1); seq <= 101; seq++ {
+		op := Op{ID: OpID{Actor: actor, Seq: seq}, Key: d.Key, Field: "text", Kind: KindIns, Lamport: seq, Value: json.RawMessage(`"x"`)}
+		if seq > 1 && seq <= 100 {
+			ref := OpID{Actor: actor, Seq: seq - 1}
+			op.Ref = &ref
+		}
+		if err := d.Apply(op, sch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if d.Fields["text"].Seq.positions != nil {
+		t.Fatal("expected unindexed large shift")
+	}
+	check := func() {
+		t.Helper()
+		raw, err := d.MarshalSnapshot()
+		if err != nil {
+			t.Fatal(err)
+		}
+		back, err := UnmarshalSnapshot(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(back, d) || !reflect.DeepEqual(d.Clone(), d) {
+			t.Fatal("derived index state differs after round trip")
+		}
+	}
+	check()
+	ref := OpID{Actor: actor, Seq: 49}
+	late := Op{ID: OpID{Actor: "bbbbbbbbbbbbbbbb", Seq: 1}, Key: d.Key, Field: "text", Kind: KindIns, Lamport: 50, Ref: &ref, Value: json.RawMessage(`"y"`)}
+	if err := d.Apply(late, sch); err != nil {
+		t.Fatal(err)
+	}
+	check()
+	ref = OpID{Actor: actor, Seq: 100}
+	if err := d.Apply(Op{ID: OpID{Actor: actor, Seq: 102}, Key: d.Key, Field: "text", Kind: KindIns, Lamport: 102, Ref: &ref, Value: json.RawMessage(`"z"`)}, sch); err != nil {
+		t.Fatal(err)
+	}
+	check()
+}
 
 func TestRGAIndexAcrossInsertDeleteCloneSnapshot(t *testing.T) {
 	d := NewDocument(DocKey{Coll: "cards", Doc: "indexed"})

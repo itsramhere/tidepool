@@ -26,6 +26,10 @@ type RGA struct {
 	Text  bool
 	// positions is derived state, maintained only by successful apply operations.
 	positions map[OpID]int
+	// newest and prepared make the adaptive policy depend on sequence state,
+	// rather than delivery history, so snapshot load reconstructs identical state.
+	newest   int
+	prepared bool
 }
 
 // check validates an ins or del op against the sequence and writes nothing.
@@ -80,11 +84,7 @@ func (g *RGA) check(op Op, vv map[ActorID]uint64) error {
 func (g *RGA) apply(op Op) {
 	switch op.Kind {
 	case KindIns:
-		// Build on append, where the index removes repeated full scans. For
-		// large middle inserts, discard it rather than rewriting thousands of
-		// map entries; a later append rebuilds it once.
-		appendOnly := len(g.Items) == 0 || (op.Ref != nil && *op.Ref == g.Items[len(g.Items)-1].ID)
-		if g.positions == nil && appendOnly {
+		if !g.prepared {
 			g.reindex()
 		}
 		i := 0
@@ -94,11 +94,19 @@ func (g *RGA) apply(op Op) {
 		for i < len(g.Items) && rgaItemGreater(g.Items[i], op) {
 			i++
 		}
-		g.Items = slices.Insert(g.Items, i, RGAItem{ID: op.ID, Lamport: op.Lamport, Value: op.Value})
-		if len(g.Items)-i > 64 {
-			g.positions = nil
+		newest := len(g.Items) == 0 || !rgaItemGreater(g.Items[g.newest], op)
+		if i <= g.newest {
+			g.newest++
 		}
-		if g.positions != nil {
+		if newest {
+			g.newest = i
+		}
+		g.Items = slices.Insert(g.Items, i, RGAItem{ID: op.ID, Lamport: op.Lamport, Value: op.Value})
+		if len(g.Items)-g.newest > 64 {
+			g.positions = nil
+		} else if g.positions == nil {
+			g.reindex()
+		} else {
 			for j := i; j < len(g.Items); j++ {
 				g.positions[g.Items[j].ID] = j
 			}
@@ -183,6 +191,17 @@ func (g *RGA) Materialize() any {
 }
 
 func (g *RGA) reindex() {
+	g.prepared = true
+	g.newest = 0
+	for i := range g.Items {
+		if rgaItemGreater(g.Items[i], Op{ID: g.Items[g.newest].ID, Lamport: g.Items[g.newest].Lamport}) {
+			g.newest = i
+		}
+	}
+	if len(g.Items)-g.newest > 64 {
+		g.positions = nil
+		return
+	}
 	g.positions = make(map[OpID]int, len(g.Items))
 	for i, item := range g.Items {
 		g.positions[item.ID] = i

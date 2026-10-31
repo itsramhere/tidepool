@@ -25,7 +25,8 @@ python -B bench/run.py --duration 10s
 ```
 
 `rga-before.txt` was captured before adding the derived index; `rga-after.txt`
-is the final adaptive implementation. To reproduce the baseline with the new
+is the M12 adaptive implementation. `rga-m13.txt` records the snapshot-safe
+adaptive policy introduced during M13 verification. To reproduce the baseline with the new
 benchmark file, use an isolated checkout with the original `rga.go` from
 `a3f3265` and omit `g.reindex()` from benchmark setup. Setup and reset are
 excluded from RGA timing; index memory and construction cost are therefore
@@ -54,6 +55,30 @@ does not claim a random-insertion speedup. Updating every shifted map entry
 experimentally cost about 4.85 ms/op at 100k, so large middle insertions now
 discard the index and a subsequent append rebuilds it; shifts of at most 64
 items update exact positions directly.
+
+### M13 snapshot-safe index verification
+
+The 2,000-step convergence run exposed history-dependent index presence in
+M12: a large middle insert could discard a live index, while snapshot load
+always rebuilt it. The existing deep-equality snapshot test detected this.
+M13 now chooses index presence from sequence state: retain it exactly when
+the greatest `(Lamport, Actor)` item is within the final 64 slots. Snapshot
+load and clone reconstruct that same choice; no existing test was changed.
+
+| Pattern | Initial items | M13, microseconds/op |
+|---|---:|---:|
+| Append | 1,000 | 1.000 |
+| Append | 10,000 | 1.572 |
+| Append | 100,000 | 1.510 |
+| Random | 1,000 | 9.116 |
+| Random | 10,000 | 45.604 |
+| Random | 100,000 | 745.312 |
+
+This 200-iteration run used seed 12345 and the same commands while other
+verification/build work was running, so small timing differences are not
+controlled comparisons. Append remains much faster than the original linear
+lookup; random insertion has no demonstrated gain, and occasional index
+rebuilds add cost (4,715 B/op in the 1k random case).
 
 ## Document apply
 

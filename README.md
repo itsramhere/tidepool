@@ -1,198 +1,205 @@
 # Tidepool
 
-Tidepool is a local-first sync server: apps keep a full copy of their data on
-every device, edit it offline instantly, and sync later — conflicts never need
-manual resolution because every field type is a conflict-free replicated data
-type (CRDT). A single-writer committer group-commits operations to Pebble, an
-embedded LSM-tree key-value store, so one fsync covers a whole batch of
-requests; writes denied by per-collection CEL authorization rules are stored as
-no-ops so that operation sequences stay contiguous and every replica converges
-on the fact that the op did nothing; clients subscribe to *shapes* — a
-collection plus a CEL filter — and partially replicate exactly the documents
-they need, with live move-in snapshots and move-out evictions as documents
-cross the shape's boundary. Nodes stream their operation feeds to each other
-and converge without consensus, and Go and TypeScript client SDKs are held
-byte-compatible by generated cross-language conformance vectors.
-
-## Features
-
-- **Five CRDT field types** — last-writer-wins registers, counters, add-wins
-  OR-Sets, and RGA-backed lists and text — with deterministic op semantics
-  shared verbatim between server and clients.
-- **Offline-first Go client** (`pkg/client`): local confirmed state plus a
-  pending op queue, automatic reconnect with jittered backoff, re-subscribe
-  and re-push on every reconnect, pluggable `LocalStore` persistence.
-- **Byte-compatible TypeScript client** (`sdk/ts`, `@tidepool/client`): the
-  same CRDT engine ported 1:1, held identical to Go by 50 generated
-  conformance vectors (values and snapshots compared as canonical JSON),
-  with a reactive API, memory and IndexedDB persistence, and zero runtime
-  dependencies beyond `idb`.
-- **Group commit to Pebble** — one fsync per batch of up to 256 requests, a
-  10k-document LRU cache, automatic snapshots every 100 ops per document.
-- **CEL authorization rules** — per-collection `read`/`write` rules over
-  `auth` (uid + JWT claims), `doc`/`newDoc` values, and the op itself;
-  denied writes become noops, so rejection is just another convergent op.
-- **Shapes** — subscriptions with CEL filters; documents move in (snapshot)
-  and out (op, then evict) live, and partial-replication state survives
-  reconnects.
-- **Multi-master replication** — every node serves its op feed
-  (`GET /v1/replicate?after=N`) and pulls its peers' feeds with durable
-  cursors; no leader, no consensus, three nodes behind a docker-compose file.
-- **Chaos-tested** — a seeded 3-node/6-client chaos test randomly partitions
-  links and moves clients between nodes, then asserts byte-identical
-  convergence everywhere.
-
-## Quickstart
-
-Run one node (development config, listens on `127.0.0.1:7100`):
-
-```powershell
-go run ./cmd/tidepoold --config deploy/dev.yaml
-```
-
-Mint a client token (HS256 JWT; `sub` is the user id):
-
-```powershell
-go run ./cmd/tpctl token --secret dev-secret-change-me --uid alice --ttl 24h
-```
-
-Edit a document from Go:
-
-```go
-c, err := client.New(client.Options{
-    URL:   "ws://127.0.0.1:7100/v1/sync",
-    Token: token,
-    Schemas: map[string]crdt.Schema{"cards": {
-        "title": crdt.FieldRegister, "votes": crdt.FieldCounter,
-        "labels": crdt.FieldSet, "description": crdt.FieldText,
-    }},
-})
-if err != nil { panic(err) }
-go c.Run(ctx)                       // connect/reconnect loop until ctx is done
-c.Subscribe("cards", "")            // shape: this collection, every doc
-
-card := c.Doc("cards", "card1")     // offline edits queue locally
-card.Set("title", "hello")
-card.Inc("votes", 1)
-card.InsertText("description", 0, "hi ")
-
-ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-defer cancel()
-c.WaitSynced(ctx)                   // pending ops pushed, subscriptions ready
-fmt.Println(card.Values())
-```
-
-The same edits from TypeScript (`npm install @tidepool/client`):
-
-```ts
-import { Client } from "@tidepool/client";
-
-const c = await Client.create({
-  url: "ws://127.0.0.1:7100/v1/sync",
-  token,
-  schemas: { cards: { title: "register", votes: "counter",
-                      labels: "set", description: "text" } },
-});
-c.run();                                 // connect/reconnect loop
-c.subscribe("cards", "");                // shape: this collection, every doc
-
-const card = c.doc("cards", "card1");    // offline edits queue locally
-card.set("title", "hello");
-card.inc("votes", 1);
-
-await c.waitSynced();                    // pending ops pushed, subs ready
-console.log(card.values());
-```
-
-Run a three-node cluster with replication:
-
-```powershell
-docker compose -f deploy/docker-compose.yml up
-# clients: ws://localhost:7200/v1/sync, :7201, :7202
-```
-
-## Try it: collaborative kanban
+Tidepool is a local-first sync server written in Go. Clients keep their own
+copy of the data and can edit it offline. When they reconnect, their changes
+merge with everyone else's automatically, using CRDTs (conflict-free
+replicated data types). Any node in a cluster accepts writes; nodes catch each
+other up by streaming their operation logs, with no leader election and no
+consensus protocol.
 
 ![Two windows edit offline, reconnect, and move a card between board shapes](docs/kanban-demo.gif)
 
-Use Go plus Node.js 22.12+ (or 20.19+). From the repository root, start the
-demo node in one terminal:
+The repository contains the server, Go and TypeScript client SDKs, a
+collaborative kanban demo, a load generator and the benchmark results. It is
+about 14k lines of Go, half of it tests.
+
+## What it does
+
+- **Five CRDT field types:** last-writer-wins registers, counters, add-wins
+  sets, RGA lists and Unicode text. Every operation has an `(actor, seq)` ID, so
+  deduplication and "what is this replica missing?" are version-vector checks.
+- **Offline-first clients in Go and TypeScript.** Each client keeps confirmed
+  server state separately from its pending local edits, shows the edits
+  immediately, and replays them after reconnecting. The TypeScript SDK is tested
+  against 50 test vectors generated by the Go implementation; the resulting
+  snapshots must match byte for byte.
+- **Durable group commit.** A single committer goroutine owns all document
+  state and writes up to 256 queued requests in one Pebble batch with one fsync.
+  Acknowledgments are sent only after the commit returns.
+- **Authorization rules in CEL** over JWT claims and document values. A
+  rejected edit is stored as a noop instead of being dropped, so per-actor
+  sequence numbers stay contiguous and every replica agrees that the edit did
+  nothing. The author's client rolls back its optimistic change.
+- **Partial replication.** A client subscribes to a collection plus a CEL
+  filter. When a document starts matching, the client receives a snapshot;
+  while it matches, the client receives operations; when it stops matching,
+  the client receives the final operation and then an eviction.
+- **Multi-master replication.** Nodes pull each other's feeds and keep durable
+  per-peer cursors. Duplicates are ignored, and order doesn't matter because the
+  data types are CRDTs.
+- **Operations tooling:** Prometheus metrics, an admin listener with document
+  inspection and pprof (token-protected), the `tpctl` CLI, and the `tpload` load
+  generator.
+
+## How it was tested
+
+Correctness relies mostly on randomized tests that can be reproduced from a seed
+(`TIDEPOOL_SEED`, `TIDEPOOL_ITER`):
+
+- **Convergence fuzzing:** four in-memory replicas make random edits to every
+  field type and sync with each other in random order. The test asserts that
+  their values, version vectors and snapshot round trips are identical.
+- **Crash safety:** Pebble's crashable in-memory filesystem drops unsynced
+  writes. The test checks that everything acknowledged survives and that the
+  store reopens cleanly.
+- **Chaos test:** three Pebble-backed nodes and six clients, with peer and
+  client links cut and restored at random and clients moved between nodes. After
+  healing, every node and every client must hold identical documents.
+- **Cross-language conformance and end-to-end tests:** a TypeScript client and
+  a Go client edit the same documents through a real server binary.
+
+The chaos test found three real convergence bugs, all now fixed:
+
+1. Clients persisted only their local edits, not the confirmed state from
+   server echoes. After a restart, a client could reuse an already-committed
+   operation ID for different content. No CRDT can reconcile that.
+2. Moving a client between nodes raced the shutdown of its previous connection
+   over the shared local store.
+3. A lagging peer node evicted documents it hadn't replicated yet, which made
+   clients drop real data.
+
+A later 2,000-step convergence run also caught a bug where an RGA position
+index depended on delivery history. A snapshot round trip then produced
+different derived state. See [verification](docs/VERIFICATION.md) for the
+final runs: 20 consecutive passes of the integration suite, 5 chaos-test passes,
+and the race detector on Linux.
+
+## Measured results
+
+Single short runs on a Ryzen 7 7445HS laptop (Windows 11, local NVMe SSD). The
+server and load generator ran on the same machine over loopback:
+
+| Workload | Result |
+|---|---|
+| Durable commits, 1 request per fsync | 821 ops/s |
+| Durable commits, 256 requests per fsync | 32,210 ops/s (~39× from group commit) |
+| 64 clients, 100 documents, 1,000 ops/s offered | 999 ops/s completed, 0 errors |
+| Fan-out latency for that run (630,000 deliveries) | p50 3.7 ms · p95 12.2 ms · p99 29.3 ms |
+| RGA append at 100k items, before / after position index | 272 µs → ~1.5 µs per op |
+
+These runs were rate-limited, so they show the server handling the offered
+load, not its saturation point. Random mid-sequence RGA inserts are still linear
+and got no faster from the index. [RESULTS.md](bench/RESULTS.md) has the
+commands, raw output, environment and caveats.
+
+## Design notes
+
+- [Architecture](docs/ARCHITECTURE.md): request lifecycles for push,
+  subscribe and peer replication
+- [CRDT semantics](docs/CRDTS.md): apply rules and why RGA ordering converges
+- [Wire protocol](docs/PROTOCOL.md): frames, ack statuses, sequence diagrams
+- Decision records: [op-based CRDTs](docs/adr/0001-op-based-crdts.md),
+  [subscribe inside the committer](docs/adr/0002-subscribe-in-committer.md),
+  [multi-master without consensus](docs/adr/0003-multi-master.md),
+  [noop rejection](docs/adr/0004-noop-rejection.md),
+  [Pebble](docs/adr/0005-pebble.md),
+  [shape scans](docs/adr/0006-shape-scan.md)
+
+## Limitations
+
+- No transactions across documents or fields. Each operation is merged
+  independently.
+- Write rules are evaluated against the origin node's local state, which may be
+  stale. Two nodes can accept edits that a single global check would reject.
+- Documents can't be deleted, and tombstones and logs are never compacted.
+- Subscribing scans the whole collection; no secondary indexes yet.
+- The TypeScript SDK uses JavaScript numbers, so counters and sequence numbers
+  must stay within the safe-integer range.
+
+## Quickstart: three nodes and the kanban demo
+
+Requirements: Docker Compose, Node.js 22.12+ and npm. Go 1.26.3 is needed for
+local-server runs, tests and the recording script. Run these commands from the
+repository root.
+
+Start the cluster with the **development-only** kanban overlay:
+
+```powershell
+docker compose -p tidepool-demo -f deploy/docker-compose.yml -f deploy/docker-compose.demo.yml up --build
+```
+
+In another terminal, build the local SDK and start the demo against node 1:
+
+```powershell
+npm --prefix sdk/ts ci
+npm --prefix sdk/ts run build
+npm --prefix examples/kanban ci
+$env:VITE_SERVER_URL = 'ws://127.0.0.1:7200/v1/sync'
+npm --prefix examples/kanban run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+Open `http://127.0.0.1:5173`. To compare nodes, start a second Vite instance
+against node 3 and open it in a second window:
+
+```powershell
+$env:VITE_SERVER_URL = 'ws://127.0.0.1:7202/v1/sync'
+npm --prefix examples/kanban run dev -- --host 127.0.0.1 --port 5174 --strictPort
+```
+
+Each browser install gets its own actor ID, even if both windows select Alice.
+Allow a few seconds for edits to cross nodes: peer catch-up flushes short
+batches after two seconds of idle time.
+
+The overlay enables `/dev/token?uid=` and permissive shared-editing rules for the
+demo. Base configs keep dev mode off and use the ownership and board-claim
+rules in `deploy/rules.yaml`. All sample ports bind to loopback. Replace the
+example secrets and write your own rules before deploying anywhere else. To stop
+the demo and keep its volumes:
+
+```powershell
+docker compose -p tidepool-demo -f deploy/docker-compose.yml -f deploy/docker-compose.demo.yml down
+```
+
+### Try it: offline convergence
+
+1. On board **b1**, click **+ new card**. Edit its title (Enter or blur to
+   save), description, labels (Enter) and checklist. Wait for the card to appear
+   in the second window.
+2. In the first window, click **Go offline**. Change the description and vote.
+   The edits show up immediately and the pending counter goes up.
+3. In the second window, still online, vote and add a different label.
+4. Click **Go online** in the first window. Once pending reaches zero and the
+   peers have caught up, both windows show the merged description, labels and
+   votes.
+5. Change the card's **Column** to move it to doing or done. Change its **Board**
+   to **b2**, and it leaves b1 in both windows. Select b2 in each header to get
+   the card back through the new subscription. **Archive card** moves it off both
+   boards.
+6. Switch users to try different identities. Pending edits survive switching
+   away and back within the same window.
+
+The demo keeps client state in memory. Keep the window open while offline,
+because reloading loses unconfirmed edits. Confirmed documents persist in the
+node volumes. To run a single local node instead of Docker:
 
 ```powershell
 go run ./cmd/tidepoold --config examples/kanban/dev.yaml
 ```
 
-In another terminal, build the local SDK, install the demo, and start Vite:
+Then set `VITE_SERVER_URL` to `ws://127.0.0.1:7100/v1/sync` before starting
+Vite. That config stores confirmed documents in `data/demo`.
 
-```powershell
-npm --prefix sdk/ts ci
-npm --prefix sdk/ts run build
-cd examples/kanban
-npm ci
-npm run dev
-```
-
-Open the printed Vite URL in two windows. Each window has a separate actor,
-even when both select Alice. Then follow this roughly 60-second walkthrough:
-
-1. On board **b1**, click **+ new card**. Edit its title (Enter or blur to save),
-   description, labels (Enter), and checklist. The second window updates live.
-2. In the first window, click **Go offline**. Change the description and vote.
-   Edits appear immediately and the pending counter grows.
-3. In the second window, vote and add a different label while still online.
-4. Click **Go online** in the first window. Both show the merged description,
-   labels, and votes; pending returns to zero and status becomes **synced**.
-5. Change a card's **Column** to move it to doing/done. Change its **Board** to
-   **b2**: it leaves b1 in both windows. Select b2 in the header to receive it
-   through the new `doc.board == "b2"` shape. **Archive card** moves it outside
-   both demo boards.
-6. Switch users in the header to try distinct identities. A user's queued edits
-   survive switching away and back within that window.
-
-The demo uses memory storage: keep the window open while offline; a reload
-discards unconfirmed edits. Confirmed data lives in `data/demo`. Its dedicated
-rules allow shared editing of every card. The unauthenticated `/dev/token?uid=`
-endpoint is mounted only with `dev_mode: true`; the included config binds to
-loopback. Leave dev mode disabled on deployed nodes. To use another node, set
-`VITE_SERVER_URL` before starting Vite.
-
-To repeat the browser verification and regenerate the GIF (requires FFmpeg on
-PATH), run from `examples/kanban`:
+To replay the browser walkthrough and regenerate the GIF, install FFmpeg on
+PATH and run this from `examples/kanban`:
 
 ```powershell
 npx playwright install chromium
 npm run demo:record
 ```
 
-The script starts an isolated node with temporary storage and two browser
-sessions, asserts convergence and board move-in/out, captures real screenshots,
-then shuts down its node and removes the temporary data.
-
-## Wire protocol
-
-WebSocket text frames, one JSON object per frame (`hello`/`welcome`,
-`sub`/`snap`/`op`/`evict`/`ready`, `push`/`ack`, `err`, `ping`/`pong`) — see
-`internal/protocol` for the message definitions. The server guarantees, per
-connection, commit-ordered frames (G1), exactly-once echo of every accepted op
-to its author (G2), and post-`ready` equality between the client's copy and
-the server's (G3).
-
-## Project layout
-
-```
-cmd/tidepoold/       server binary        internal/replication/  peer feed + puller
-cmd/tpctl/           token CLI            internal/schema/       rules.yaml + CEL rules
-cmd/tpconform/       conformance vectors  internal/protocol/     wire messages
-cmd/tpload/          load generator (M12) internal/auth/         JWT issue/verify
-internal/crdt/       CRDT core            internal/storage/      Store: memory + Pebble
-internal/server/     sessions, committer  pkg/client/            Go client SDK
-sdk/ts/              TypeScript client    test/integration/      end-to-end tests + Go helper
-docs/adr/            architecture decisions
-deploy/              docker-compose cluster, node configs, rules example
-testdata/conformance/ generated cross-language test vectors (M10 uses these)
-test/integration/    end-to-end server + client tests
-test/chaos/          partition/convergence tests + blockable proxy
-```
+The recorder starts an isolated real server and two browser sessions, checks
+offline convergence, user switching and board moves, and records screenshots.
+For Go SDK usage, see the [integration tests](test/integration).
 
 ## Development
 
@@ -201,22 +208,19 @@ gofmt -l .      # must print nothing
 go vet ./...
 go build ./...
 go test ./...
+npm --prefix sdk/ts test
+npm --prefix sdk/ts run typecheck
 ```
 
-CI runs `go test -race ./...` for Go and `npm test` + `tsc --noEmit` for the
-TypeScript SDK (both reproducible locally — the Go job verbatim inside
-WSL). Randomized tests take `TIDEPOOL_SEED` (printed on failure) and
-`TIDEPOOL_ITER`; the chaos test skips under `-short`. Architecture
-decisions live in
-[docs/adr](docs/adr): subscribe-in-committer (0002), multi-master
-replication without consensus (0003), and the shape-matching full scan
-(0004).
+CI also runs `go test -race ./...` on Linux. The chaos suite is skipped with
+`-short`. Randomized tests log their seed so a failure can be replayed.
 
-## Status
+## Future Improvements can include
 
-Milestones M0–M11 are complete: CRDT core with cross-language conformance
-vectors, durable storage, the single-node server, the Go and TypeScript
-client SDKs, CEL authorization rules, shape-based partial replication, and
-multi-node replication with the chaos test, and the collaborative offline-first
-kanban demo. Remaining milestones cover observability, benchmarks, and
-documentation polish.
+- Document deletion and tombstone/log garbage collection based on replica
+  progress, without dropping dependencies that offline peers still reference.
+- A binary wire encoding to cut per-operation overhead.
+- Secondary indexes for common shape filters.
+- Per-tenant workspaces with separate identity, resource and policy limits.
+- End-to-end encryption, including how filters and authorization would work
+  when servers can't read document fields.

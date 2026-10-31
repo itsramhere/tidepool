@@ -9,7 +9,7 @@ max_ops_per_push: 1000
 session_send_buffer: 1024
 peers:
   - id: node2
-    url: "http://node2:7200"
+    url: "http://node2:7201"
     secret: cluster-secret-change-me
   - id: node3
     url: "http://node3:7202"

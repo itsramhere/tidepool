@@ -1,7 +1,10 @@
-# ADR 0004: Shape matching scans the whole collection
+# ADR 0006: Shape matching scans the whole collection
 
 Date: 2026-10-31
 Status: Accepted (M8)
+
+Renumbered in M13 to reserve ADR 0004 for noop rejection, as required by
+PLAN.md. The decision and its original M8 scope are unchanged.
 
 ## Context
 

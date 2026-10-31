@@ -1,0 +1,18 @@
+# Development-only: unauthenticated demo tokens and shared kanban edits.
+dev_mode: true
+node_id: node2
+listen: "0.0.0.0:7201"
+data_dir: /data
+fsync: always
+jwt_secret: dev-secret-change-me
+admin_token: dev-admin-token
+rules_file: /etc/tidepool/rules.yaml
+max_ops_per_push: 1000
+session_send_buffer: 1024
+peers:
+  - id: node1
+    url: "http://node1:7200"
+    secret: cluster-secret-change-me
+  - id: node3
+    url: "http://node3:7202"
+    secret: cluster-secret-change-me
