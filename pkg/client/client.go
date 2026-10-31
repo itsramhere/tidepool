@@ -374,6 +374,18 @@ func (c *Client) dispatch(data []byte) error {
 			return fmt.Errorf("client: undecodable err frame: %w", err)
 		}
 		c.mu.Lock()
+		if f.Sub != "" {
+			// Subscription-scoped error (e.g. bad_filter): only that
+			// subscription fails; the connection stays up.
+			err := fmt.Errorf("client: subscription %s error %s: %s", f.Sub, f.Code, f.Msg)
+			if sub := c.subs[f.Sub]; sub != nil {
+				sub.failed = err
+			}
+			c.emitErrorLocked(err)
+			c.notifyLocked()
+			c.mu.Unlock()
+			return nil
+		}
 		c.emitErrorLocked(fmt.Errorf("client: server error %s: %s", f.Code, f.Msg))
 		c.mu.Unlock()
 		return fmt.Errorf("client: server error %s: %s", f.Code, f.Msg)
@@ -787,7 +799,12 @@ func (c *Client) WaitSynced(ctx context.Context) error {
 		synced := true
 		for _, id := range c.subOrder {
 			sub := c.subs[id]
-			if sub == nil || sub.failed != nil || !sub.ready {
+			// A failed subscription can never become ready (the server
+			// rejected it, e.g. bad_filter); it must not block forever.
+			if sub == nil || sub.failed != nil {
+				continue
+			}
+			if !sub.ready {
 				synced = false
 				break
 			}

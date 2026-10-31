@@ -28,7 +28,7 @@ var ruleEnv, ruleEnvErr = cel.NewEnv(
 // compileRule compiles one rule text against the shared environment. The
 // rule text is part of every error so a bad deploy fails fast with the
 // offending rule visible.
-func compileRule(name, src string) (cel.Program, error) {
+func CompileRule(name, src string) (cel.Program, error) {
 	if ruleEnvErr != nil {
 		return nil, fmt.Errorf("build rule environment: %w", ruleEnvErr)
 	}

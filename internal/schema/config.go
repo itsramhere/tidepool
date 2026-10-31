@@ -81,14 +81,14 @@ func Parse(data []byte) (*Config, error) {
 		// Compile every declared rule at startup: a bad rule must fail the
 		// config load, not surface at first use.
 		if coll.Rules.Read != "" {
-			prog, err := compileRule(name+"/read", coll.Rules.Read)
+			prog, err := CompileRule(name+"/read", coll.Rules.Read)
 			if err != nil {
 				return nil, fmt.Errorf("rules.yaml: collection %q: %w", name, err)
 			}
 			coll.readProg = prog
 		}
 		if coll.Rules.Write != "" {
-			prog, err := compileRule(name+"/write", coll.Rules.Write)
+			prog, err := CompileRule(name+"/write", coll.Rules.Write)
 			if err != nil {
 				return nil, fmt.Errorf("rules.yaml: collection %q: %w", name, err)
 			}

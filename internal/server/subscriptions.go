@@ -3,17 +3,22 @@ package server
 import (
 	"sort"
 	"sync/atomic"
+
+	"github.com/google/cel-go/cel"
 )
 
 var sessionSeq atomic.Uint64
 
-// subscription is one client subscription: a collection plus (from M8) a CEL
-// filter. In M5 every subscription matches all docs of its collection.
+// subscription is one client subscription: a collection plus a CEL filter
+// (compiled at subscribe time). inShape holds the doc IDs currently matching
+// the subscription's shape, maintained by the committer's broadcast.
 type subscription struct {
-	id     string
-	coll   string
-	filter string
-	sess   *session
+	id         string
+	coll       string
+	filter     string
+	filterProg cel.Program
+	inShape    map[string]struct{}
+	sess       *session
 }
 
 // subscriptionSet tracks active subscriptions. It is owned by the committer

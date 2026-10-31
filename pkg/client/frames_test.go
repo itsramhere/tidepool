@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,7 +143,7 @@ func waitSubReady(t *testing.T, c *Client) {
 		c.mu.Lock()
 		ready := true
 		for _, id := range c.subOrder {
-			if s := c.subs[id]; s == nil || !s.ready {
+			if s := c.subs[id]; s == nil || (s.failed == nil && !s.ready) {
 				ready = false
 			}
 		}
@@ -375,5 +376,38 @@ func TestFileStorePersistence(t *testing.T) {
 	waitSynced(t, c2)
 	if got := b2.Values(); !valuesEqual(got, map[string]any{"title": "kept", "votes": int64(2)}) {
 		t.Fatalf("synced values = %v, want votes 2", got)
+	}
+}
+
+// TestBadFilterFailsSubscriptionOnly: a server-rejected filter (err frame
+// with sub set) fails that subscription, surfaces its error, and leaves the
+// connection — and later subscriptions — fully functional.
+func TestBadFilterFailsSubscriptionOnly(t *testing.T) {
+	ts := startServer(t, testSchemasConfig(t))
+	c := newTestClient(t, ts, nil)
+
+	bad := c.Subscribe("cards", `doc.status ==`)
+	select {
+	case err := <-c.Errors():
+		if bad.failed == nil || !strings.Contains(err.Error(), "bad_filter") {
+			t.Fatalf("error = %v, want failed sub mentioning bad_filter", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no error surfaced for the bad filter")
+	}
+
+	// The session survived: a valid subscription readies and edits sync.
+	good := c.Subscribe("cards", "")
+	waitSubReady(t, c)
+	if good.failed != nil {
+		t.Fatalf("good subscription failed: %v", good.failed)
+	}
+	board := c.Doc("cards", "b1")
+	if err := board.Set("title", "still connected"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	waitSynced(t, c)
+	if got := board.Values(); !valuesEqual(got, map[string]any{"title": "still connected"}) {
+		t.Fatalf("values = %v, want the edit synced", got)
 	}
 }

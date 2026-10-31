@@ -124,6 +124,7 @@ type Ack struct {
 
 type Error struct {
 	T    string `json:"t"`
+	Sub  string `json:"sub,omitempty"`
 	Code string `json:"code"`
 	Msg  string `json:"msg"`
 }
@@ -169,6 +170,12 @@ func NewAck(req uint64, results []AckResult) Ack {
 }
 
 func NewError(code, msg string) Error { return Error{T: TypeErr, Code: code, Msg: msg} }
+
+// NewSubError builds a subscription-scoped error: the session stays up, only
+// the named subscription is affected (e.g. bad_filter from M8).
+func NewSubError(sub, code, msg string) Error {
+	return Error{T: TypeErr, Sub: sub, Code: code, Msg: msg}
+}
 
 func NewPong() Pong { return Pong{T: TypePong} }
 

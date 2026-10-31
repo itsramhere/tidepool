@@ -175,8 +175,8 @@ func TestConnectSubscribeWaitSynced(t *testing.T) {
 	}
 	waitReady(t, c)
 
-	// A second subscription becomes ready too.
-	c.Subscribe("cards", "title != ''")
+	// A second subscription with a valid filter becomes ready too.
+	c.Subscribe("cards", "doc.title != ''")
 	waitReady(t, c)
 
 	// Subscribing to an unknown collection surfaces an error on Errors()

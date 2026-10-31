@@ -96,6 +96,10 @@ type committer struct {
 
 	lru         *lru.Cache[crdt.DocKey, *docEntry]
 	nextFeedSeq uint64
+	// filterCache memoizes compiled subscription filters by their text.
+	// Committer-goroutine only, like everything else here; the set of
+	// distinct filter texts a deployment uses is small.
+	filterCache map[string]cel.Program
 
 	// batches counts committed groups; a test-only counter for the group
 	// commit test.
@@ -122,6 +126,7 @@ func newCommitter(cfg *Config, schemas *schema.Config, store storage.Store, log 
 		subs:        newSubscriptionSet(),
 		lru:         cache,
 		nextFeedSeq: last,
+		filterCache: make(map[string]cel.Program),
 	}, nil
 }
 
@@ -390,15 +395,42 @@ func (c *committer) loadDoc(key crdt.DocKey, sch crdt.Schema, touched map[crdt.D
 
 // stageSubscribe reconciles one subscription and registers it. Everything
 // happens on the committer goroutine, so no committed op can slip in between
-// the reconciliation reads and the registration (see ADR 0002).
+// the reconciliation reads and the registration (see ADR 0002). The filter
+// compiles here (cached by text); a bad filter fails only this subscription
+// via an err frame carrying its sub id (PLAN.md M8) — the session stays up.
+// Reconcile walks every doc of the collection and sends only what matches
+// (see ADR 0004 for the O(collection) cost).
 func (c *committer) stageSubscribe(r *subscribeReq) {
 	sch, ok := c.schemas.Schema(r.coll)
 	if !ok {
 		r.sess.fail("unknown_collection", "collection is not configured")
 		return
 	}
-	// M5: filters are accepted but match every document; CEL shapes arrive
-	// in M8.
+	var filterProg cel.Program
+	if r.filter != "" {
+		prog, cached := c.filterCache[r.filter]
+		if !cached {
+			p, err := schema.CompileRule(r.coll+"/filter", r.filter)
+			if err != nil {
+				r.sess.sendMessage(protocol.NewSubError(r.id, "bad_filter", err.Error()))
+				return
+			}
+			c.filterCache[r.filter] = p
+			prog = p
+		}
+		filterProg = prog
+	}
+	sub := &subscription{
+		id:         r.id,
+		coll:       r.coll,
+		filter:     r.filter,
+		filterProg: filterProg,
+		inShape:    make(map[string]struct{}),
+		sess:       r.sess,
+	}
+	coll, _ := c.schemas.Collection(r.coll)
+	readProg, hasRead := coll.ReadRule()
+
 	var existing []string
 	if err := c.store.ListDocs(r.coll, func(docID string) error {
 		existing = append(existing, docID)
@@ -412,23 +444,16 @@ func (c *committer) stageSubscribe(r *subscribeReq) {
 	for _, docID := range existing {
 		existingSet[docID] = struct{}{}
 	}
-	coll, _ := c.schemas.Collection(r.coll)
-	readProg, hasRead := coll.ReadRule()
 	for _, docID := range existing {
 		key := crdt.DocKey{Coll: r.coll, Doc: docID}
-		// A document the read rule denies is invisible to this session:
-		// no snapshot, no ops, no future broadcasts (M7 v1 read rule; M8
-		// adds move-in/move-out shapes).
-		if hasRead {
-			doc, _, err := storage.LoadDocument(c.store, key, sch)
-			if err != nil {
-				c.log.Error("load doc for read check", slog.Any("key", key), slog.Any("err", err))
-				r.sess.fail("internal", "subscribe failed")
-				return
-			}
-			if !c.readAllowed(r.sess.auth, doc.Values(), readProg) {
-				continue
-			}
+		doc, _, err := storage.LoadDocument(c.store, key, sch)
+		if err != nil {
+			c.log.Error("load doc for subscribe", slog.Any("key", key), slog.Any("err", err))
+			r.sess.fail("internal", "subscribe failed")
+			return
+		}
+		if !c.matches(sub, readProg, hasRead, doc.Values()) {
+			continue // outside the shape: no snapshot, no ops, not in inShape
 		}
 		if vv, known := r.known[docID]; known {
 			// Send only the ops the client is missing, in docSeq order.
@@ -445,12 +470,6 @@ func (c *committer) stageSubscribe(r *subscribeReq) {
 				return
 			}
 		} else {
-			doc, _, err := storage.LoadDocument(c.store, key, sch)
-			if err != nil {
-				c.log.Error("load doc for subscribe", slog.Any("key", key), slog.Any("err", err))
-				r.sess.fail("internal", "subscribe failed")
-				return
-			}
 			snap, err := doc.MarshalSnapshot()
 			if err != nil {
 				c.log.Error("marshal snapshot for subscribe", slog.Any("key", key), slog.Any("err", err))
@@ -459,8 +478,11 @@ func (c *committer) stageSubscribe(r *subscribeReq) {
 			}
 			r.sess.sendMessage(protocol.NewSnapshot(r.id, snap))
 		}
+		sub.inShape[docID] = struct{}{}
 	}
-	// Docs the client knows that do not exist here: evict.
+	// Docs the client knows that are outside the shape now — gone here, or
+	// no longer matching — are evicted so the client's copy follows the
+	// shape (move-out at reconcile time).
 	knownIDs := make([]string, 0, len(r.known))
 	for docID := range r.known {
 		knownIDs = append(knownIDs, docID)
@@ -469,32 +491,73 @@ func (c *committer) stageSubscribe(r *subscribeReq) {
 	for _, docID := range knownIDs {
 		if _, ok := existingSet[docID]; !ok {
 			r.sess.sendMessage(protocol.NewEvict(r.id, crdt.DocKey{Coll: r.coll, Doc: docID}))
+			continue
+		}
+		if _, inShape := sub.inShape[docID]; !inShape {
+			r.sess.sendMessage(protocol.NewEvict(r.id, crdt.DocKey{Coll: r.coll, Doc: docID}))
 		}
 	}
 	r.sess.sendMessage(protocol.NewReady(r.id))
-	c.subs.add(&subscription{id: r.id, coll: r.coll, filter: r.filter, sess: r.sess})
+	c.subs.add(sub)
 	return
 }
 
 // broadcast fans one committed op out to every subscription on its
-// collection whose read rule allows the document, then echoes it to the
-// author if none of the author's own subscriptions received it (G2). The
-// author echo is unconditional: the write rule already admitted the author.
+// collection, maintaining each subscription's shape (PLAN.md M8):
+//
+//   - move-in (!was && is): the sub had no copy — send a full snapshot;
+//   - inside (was && is): send the op;
+//   - move-out (was && !is): send the op then evict, so the client sees the
+//     last transition (and the author's G2 echo) before dropping the doc;
+//   - outside (!was && !is): nothing.
+//
+// The author echo falls back to sub:"" when none of the author's own
+// subscriptions delivered an op frame (e.g. the op moved a doc into the
+// author's shape as a snapshot), keeping the G2 exactly-once guarantee.
 func (c *committer) broadcast(b broadcastEntry) {
 	coll, _ := c.schemas.Collection(b.coll)
 	readProg, hasRead := coll.ReadRule()
+	subs := c.subs.forColl(b.coll)
 	var values map[string]any
-	if hasRead {
+	if hasRead || len(subs) > 0 {
 		values = b.doc.Values()
 	}
+	var snap []byte
+	docID := b.op.Key.Doc
 	authorMatched := false
-	for _, sub := range c.subs.forColl(b.coll) {
-		if hasRead && !c.readAllowed(sub.sess.auth, values, readProg) {
-			continue
+	for _, sub := range subs {
+		was := false
+		if sub.inShape != nil {
+			_, was = sub.inShape[docID]
 		}
-		sub.sess.sendMessage(protocol.NewOp(sub.id, b.op))
-		if sub.sess == b.author {
-			authorMatched = true
+		is := c.matches(sub, readProg, hasRead, values)
+		switch {
+		case !was && is:
+			// Move-in: the sub has no copy, so send the full state.
+			if snap == nil {
+				s, err := b.doc.MarshalSnapshot()
+				if err != nil {
+					c.log.Error("marshal snapshot for move-in", slog.Any("key", b.op.Key), slog.Any("err", err))
+					continue
+				}
+				snap = s
+			}
+			sub.sess.sendMessage(protocol.NewSnapshot(sub.id, snap))
+			sub.inShape[docID] = struct{}{}
+		case was && is:
+			sub.sess.sendMessage(protocol.NewOp(sub.id, b.op))
+			if sub.sess == b.author {
+				authorMatched = true
+			}
+		case was && !is:
+			// Move-out: the op first (the author's echo rides it), then the
+			// evict that drops the doc.
+			sub.sess.sendMessage(protocol.NewOp(sub.id, b.op))
+			sub.sess.sendMessage(protocol.NewEvict(sub.id, b.op.Key))
+			delete(sub.inShape, docID)
+			if sub.sess == b.author {
+				authorMatched = true
+			}
 		}
 	}
 	if b.author != nil && !authorMatched {
@@ -502,14 +565,30 @@ func (c *committer) broadcast(b broadcastEntry) {
 	}
 }
 
-// readAllowed evaluates one read rule with doc = the document's current
-// values. Evaluation errors deny (PLAN.md M7) and are logged at debug
-// level.
-func (c *committer) readAllowed(auth map[string]any, values map[string]any, prog cel.Program) bool {
-	allowed, err := schema.Eval(prog, schema.RuleInputs{Auth: auth, Doc: values, NewDoc: values})
-	if err != nil {
-		c.log.Debug("read rule eval failed; denying", slog.Any("err", err))
-		return false
+// matches reports whether one document (by its current values) belongs to
+// the subscription's shape: the collection's read rule AND the
+// subscription's filter must both pass (PLAN.md M8). Evaluation errors deny
+// and are logged at debug level.
+func (c *committer) matches(sub *subscription, readProg cel.Program, hasRead bool, values map[string]any) bool {
+	if hasRead {
+		allowed, err := schema.Eval(readProg, schema.RuleInputs{Auth: sub.sess.auth, Doc: values, NewDoc: values})
+		if err != nil {
+			c.log.Debug("read rule eval failed; denying", slog.Any("err", err))
+			return false
+		}
+		if !allowed {
+			return false
+		}
 	}
-	return allowed
+	if sub.filterProg != nil {
+		allowed, err := schema.Eval(sub.filterProg, schema.RuleInputs{Auth: sub.sess.auth, Doc: values, NewDoc: values})
+		if err != nil {
+			c.log.Debug("filter eval failed; denying", slog.Any("err", err))
+			return false
+		}
+		if !allowed {
+			return false
+		}
+	}
+	return true
 }

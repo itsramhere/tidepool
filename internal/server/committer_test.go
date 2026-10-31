@@ -29,8 +29,8 @@ func mustAck(t *testing.T, conn *websocket.Conn, req uint64) []protocol.AckResul
 		if err := json.Unmarshal(data, &env); err != nil {
 			t.Fatalf("unmarshal envelope: %v", err)
 		}
-		if env.T == protocol.TypeOp {
-			continue // the author's own echo of a committed op
+		if env.T == protocol.TypeOp || env.T == protocol.TypeSnapshot || env.T == protocol.TypeEvict {
+			continue // broadcast frames (echoes, move-in snaps, move-out evicts)
 		}
 		if env.T != protocol.TypeAck {
 			t.Fatalf("frame type = %q, want ack", env.T)
@@ -236,13 +236,28 @@ func TestTwoSessionsFanout(t *testing.T) {
 		t.Errorf("ready sub = %q, want b-sub", r.Sub)
 	}
 
-	// Alice (not subscribed) pushes; Bob receives it via his subscription,
-	// Alice receives it as a sub:"" echo (G2).
+	// Alice (not subscribed) pushes; Bob's subscription has no copy of c1,
+	// so the first op moves the doc into his shape as a snapshot, and Alice
+	// receives the op as a sub:"" echo (G2).
 	send(t, alice, protocol.NewPush(1, []crdt.Op{validSetOp(t, aliceActor, 1, "c1", "title", "from-alice")}))
 	if results := mustAck(t, alice, 1); results[0].Status != protocol.StatusOK {
 		t.Fatalf("push = %q, want ok", results[0].Status)
 	}
 
+	snapFrame := recvType(t, bob, "snap")
+	var snapF protocol.SnapshotFrame
+	if err := json.Unmarshal(snapFrame, &snapF); err != nil {
+		t.Fatal(err)
+	}
+	if snapF.Sub != "b-sub" {
+		t.Errorf("move-in snap sub = %q, want b-sub", snapF.Sub)
+	}
+
+	// A second op on the now-known doc streams as an op frame.
+	send(t, alice, protocol.NewPush(2, []crdt.Op{validSetOp(t, aliceActor, 2, "c1", "title", "again")}))
+	if results := mustAck(t, alice, 2); results[0].Status != protocol.StatusOK {
+		t.Fatalf("push 2 = %q, want ok", results[0].Status)
+	}
 	frame := recvType(t, bob, "op")
 	var bobFrame protocol.OpFrame
 	if err := json.Unmarshal(frame, &bobFrame); err != nil {
@@ -273,15 +288,37 @@ func TestSubscribedAuthorGetsSubEchoNotBlank(t *testing.T) {
 	if results := mustAck(t, alice, 1); results[0].Status != protocol.StatusOK {
 		t.Fatalf("push = %q, want ok", results[0].Status)
 	}
-	// The author's own subscription matches, so the echo carries its sub id
-	// and there is no second, blank-sub echo.
+	// The doc is new to the author's subscription, so it moves in as a
+	// snapshot; the op itself is still echoed exactly once with sub:"" (G2).
+	snapFrame := recvType(t, alice, "snap")
+	var snapF protocol.SnapshotFrame
+	if err := json.Unmarshal(snapFrame, &snapF); err != nil {
+		t.Fatal(err)
+	}
+	if snapF.Sub != "a-sub" {
+		t.Errorf("move-in snap sub = %q, want a-sub", snapF.Sub)
+	}
 	frame := recvType(t, alice, "op")
 	var opf protocol.OpFrame
 	if err := json.Unmarshal(frame, &opf); err != nil {
 		t.Fatal(err)
 	}
-	if opf.Sub != "a-sub" {
-		t.Errorf("echo sub = %q, want a-sub", opf.Sub)
+	if opf.Sub != "" {
+		t.Errorf("echo sub = %q, want blank (snapshot already carried the state)", opf.Sub)
+	}
+
+	// A second op on the known doc echoes through the subscription.
+	send(t, alice, protocol.NewPush(2, []crdt.Op{validSetOp(t, aliceActor, 2, "c1", "title", "y")}))
+	if results := mustAck(t, alice, 2); results[0].Status != protocol.StatusOK {
+		t.Fatalf("push 2 = %q, want ok", results[0].Status)
+	}
+	frame2 := recvType(t, alice, "op")
+	var opf2 protocol.OpFrame
+	if err := json.Unmarshal(frame2, &opf2); err != nil {
+		t.Fatal(err)
+	}
+	if opf2.Sub != "a-sub" {
+		t.Errorf("echo sub = %q, want a-sub", opf2.Sub)
 	}
 }
 
@@ -560,8 +597,9 @@ func rawSend(conn *websocket.Conn, m any) error {
 	return conn.Write(ctx, websocket.MessageText, data)
 }
 
-// rawReadAck waits for the ack of one push, skipping the author's own op
-// echoes (sub:"") that the server interleaves after each ack (G2).
+// rawReadAck waits for the ack of one push, skipping broadcast frames
+// (op echoes, move-in snaps, move-out evicts) that the server interleaves
+// with acks (G1/G2).
 func rawReadAck(conn *websocket.Conn, req uint64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -577,8 +615,8 @@ func rawReadAck(conn *websocket.Conn, req uint64) error {
 		if err := json.Unmarshal(data, &env); err != nil {
 			return err
 		}
-		if env.T == protocol.TypeOp {
-			continue // the author's own echo of a committed op
+		if env.T == protocol.TypeOp || env.T == protocol.TypeSnapshot || env.T == protocol.TypeEvict {
+			continue // broadcast frames
 		}
 		var ack protocol.Ack
 		if err := json.Unmarshal(data, &ack); err != nil {

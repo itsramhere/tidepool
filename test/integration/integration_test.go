@@ -676,3 +676,113 @@ func TestAuthorizationRules(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+// shapeRulesYAML adds a status field so shape filters have something to
+// select on; no rules — shape membership comes purely from filters.
+const shapeRulesYAML = `collections:
+  cards:
+    fields:
+      title: register
+      status: register
+      votes: counter
+`
+
+// TestOfflineShapeReconcile: PLAN.md M8 task 5 — a filtered client that is
+// offline while a doc moves out of its shape and back in reconciles
+// correctly on reconnect; a doc that stays out is evicted; a doc created
+// offline moves in via snapshot.
+func TestOfflineShapeReconcile(t *testing.T) {
+	n := startNodeWithRules(t, "", "", shapeRulesYAML)
+	schemaFor := func(o *client.Options) {
+		o.Schemas = map[string]crdt.Schema{"cards": {
+			"title": crdt.FieldRegister, "status": crdt.FieldRegister, "votes": crdt.FieldCounter,
+		}}
+	}
+	alice := newClient(t, n, func(o *client.Options) {
+		schemaFor(o)
+		o.Token = mustTokenFor(t, "alice")
+	})
+	alice.Subscribe("cards", "")
+
+	// Two open cards the filtered client will know.
+	card1 := alice.Doc("cards", "card1")
+	if err := card1.Set("status", "open"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := card1.Set("title", "one"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	card2 := alice.Doc("cards", "card2")
+	if err := card2.Set("status", "open"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := card2.Set("title", "two"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	waitSynced(t, alice)
+
+	// Bob replicates only open cards; his Run is managed manually so the
+	// test can take him offline.
+	bob, err := client.New(client.Options{
+		URL:   n.wsURL(),
+		Token: mustTokenFor(t, "bob"),
+		Schemas: map[string]crdt.Schema{"cards": {
+			"title": crdt.FieldRegister, "status": crdt.FieldRegister, "votes": crdt.FieldCounter,
+		}},
+		Actor: crdt.ActorID("bbbbbbbbbbbbbbbb"),
+	})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	ctx1, cancelBob := context.WithCancel(context.Background())
+	defer cancelBob()
+	go func() { _ = bob.Run(ctx1) }()
+	bob.Subscribe("cards", `doc.status == "open"`)
+	waitSynced(t, bob)
+	b1 := bob.Doc("cards", "card1")
+	waitDocValues(t, b1, map[string]any{"status": "open", "title": "one"})
+
+	// Bob goes offline; the shape churns: card1 moves out and back in,
+	// card2 moves out and stays out, card3 is created inside the shape.
+	cancelBob()
+	if err := card1.Set("status", "closed"); err != nil {
+		t.Fatalf("close card1: %v", err)
+	}
+	if err := card1.Set("status", "open"); err != nil {
+		t.Fatalf("reopen card1: %v", err)
+	}
+	if err := card1.Set("title", "one-edited"); err != nil {
+		t.Fatalf("edit card1: %v", err)
+	}
+	if err := card2.Set("status", "closed"); err != nil {
+		t.Fatalf("close card2: %v", err)
+	}
+	card3 := alice.Doc("cards", "card3")
+	if err := card3.Set("status", "open"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := card3.Set("title", "three"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	waitSynced(t, alice)
+
+	// Bob reconnects: reconcile replays card1's missing ops, evicts card2,
+	// and snapshots card3 in.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	go func() { _ = bob.Run(ctx2) }()
+	waitSynced(t, bob)
+
+	want1 := map[string]any{"status": "open", "title": "one-edited"}
+	waitDocValues(t, b1, want1)
+	waitDocValues(t, bob.Doc("cards", "card3"), map[string]any{"status": "open", "title": "three"})
+
+	// card2 must have been evicted: its local view stays empty.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := bob.Doc("cards", "card2").Values(); len(got) != 0 {
+			t.Fatalf("bob still holds evicted card2: %v", got)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
