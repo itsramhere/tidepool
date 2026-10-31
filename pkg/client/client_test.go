@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -198,8 +199,9 @@ func TestLocalEditsPushAndEcho(t *testing.T) {
 	ts := startServer(t, testSchemasConfig(t))
 	c := newTestClient(t, ts, nil)
 
-	var changes int32
-	c.OnChange(func(crdt.DocKey) { changes++ })
+	// atomic: the callback runs on the client's reader goroutine.
+	var changes atomic.Int64
+	c.OnChange(func(crdt.DocKey) { changes.Add(1) })
 
 	// Edit while connected: every field type.
 	board := c.Doc("cards", "b1")
@@ -244,7 +246,7 @@ func TestLocalEditsPushAndEcho(t *testing.T) {
 	if !valuesEqual(got, want) {
 		t.Fatalf("values = %v, want %v", got, want)
 	}
-	if changes == 0 {
+	if changes.Load() == 0 {
 		t.Fatal("OnChange never fired for local edits")
 	}
 }
