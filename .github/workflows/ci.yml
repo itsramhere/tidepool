@@ -45,6 +45,10 @@ jobs:
           cache: npm
           cache-dependency-path: sdk/ts/package-lock.json
 
+      - name: install
+        run: npm ci
+        working-directory: sdk/ts
+
       - name: typecheck + build
         run: |
           npm run typecheck
