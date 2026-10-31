@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"sync"
 	"sync/atomic"
 
 	"github.com/google/cel-go/cel"
 	"github.com/hashicorp/golang-lru/v2"
 	"github.com/itsramhere/tidepool/internal/crdt"
 	"github.com/itsramhere/tidepool/internal/protocol"
+	"github.com/itsramhere/tidepool/internal/replication"
 	"github.com/itsramhere/tidepool/internal/schema"
 	"github.com/itsramhere/tidepool/internal/storage"
 )
@@ -62,6 +64,17 @@ type unsubscribeReq struct {
 	id   string
 }
 
+// replicatedOpsReq applies one batch from a replication peer. The committer
+// applies the ops WITHOUT rule checks (the origin node already decided; a
+// rejected op arrives as its noop), skips duplicates, persists the peer
+// cursor in the same batch, and broadcasts to local subscribers.
+type replicatedOpsReq struct {
+	peer        string
+	ops         []storage.StoredOp
+	lastFeedSeq uint64
+	done        chan error
+}
+
 // removeSessionReq detaches a dying session's subscriptions.
 type removeSessionReq struct {
 	sess *session
@@ -100,6 +113,12 @@ type committer struct {
 	// Committer-goroutine only, like everything else here; the set of
 	// distinct filter texts a deployment uses is small.
 	filterCache map[string]cel.Program
+	// feedSubs are the live replication feeds (peer connections) to notify
+	// after each commit, in feed order. feedMu guards it: subscriptions are
+	// added and removed by HTTP handler goroutines, notifications happen on
+	// the committer goroutine.
+	feedMu   sync.Mutex
+	feedSubs map[chan replication.FeedNotify]struct{}
 
 	// batches counts committed groups; a test-only counter for the group
 	// commit test.
@@ -127,6 +146,7 @@ func newCommitter(cfg *Config, schemas *schema.Config, store storage.Store, log 
 		lru:         cache,
 		nextFeedSeq: last,
 		filterCache: make(map[string]cel.Program),
+		feedSubs:    make(map[chan replication.FeedNotify]struct{}),
 	}, nil
 }
 
@@ -189,6 +209,8 @@ drain:
 			c.subs.remove(r.sess, r.id)
 		case *removeSessionReq:
 			c.subs.removeAll(r.sess)
+		case *replicatedOpsReq:
+			c.handleReplicate(r)
 		}
 	}
 
@@ -205,6 +227,7 @@ drain:
 			return
 		}
 		c.batches.Add(1)
+		c.notifyFeedSubs(batch.Ops)
 	}
 
 	// Acks first, then the broadcast — a subscribed author sees its ack
@@ -480,9 +503,13 @@ func (c *committer) stageSubscribe(r *subscribeReq) {
 		}
 		sub.inShape[docID] = struct{}{}
 	}
-	// Docs the client knows that are outside the shape now — gone here, or
-	// no longer matching — are evicted so the client's copy follows the
-	// shape (move-out at reconcile time).
+	// Docs the client knows that no longer match the shape are evicted so
+	// the client's copy follows the shape (move-out at reconcile time). A
+	// doc missing from THIS node's store is different: with peers
+	// configured it may simply not have replicated here yet, and evicting
+	// would make the client drop real data and later re-stamp colliding op
+	// IDs — so a peered node stays silent and lets the eventual move-in
+	// snapshot reconcile the copy (see ADR 0003).
 	knownIDs := make([]string, 0, len(r.known))
 	for docID := range r.known {
 		knownIDs = append(knownIDs, docID)
@@ -490,6 +517,9 @@ func (c *committer) stageSubscribe(r *subscribeReq) {
 	sort.Strings(knownIDs)
 	for _, docID := range knownIDs {
 		if _, ok := existingSet[docID]; !ok {
+			if len(c.cfg.Peers) > 0 {
+				continue // replication lag, not deletion: never evict
+			}
 			r.sess.sendMessage(protocol.NewEvict(r.id, crdt.DocKey{Coll: r.coll, Doc: docID}))
 			continue
 		}
@@ -562,6 +592,145 @@ func (c *committer) broadcast(b broadcastEntry) {
 	}
 	if b.author != nil && !authorMatched {
 		b.author.sendMessage(protocol.NewOp("", b.op))
+	}
+}
+
+// AddFeedSub registers a live feed subscriber (one replication peer). The
+// channel is buffered; when the committer cannot keep up with a subscriber
+// it closes the channel — the subscriber disconnects and resumes from its
+// cursor.
+func (c *committer) AddFeedSub() chan replication.FeedNotify {
+	ch := make(chan replication.FeedNotify, 256)
+	c.feedMu.Lock()
+	defer c.feedMu.Unlock()
+	c.feedSubs[ch] = struct{}{}
+	return ch
+}
+
+// RemoveFeedSub unregisters a feed subscriber.
+func (c *committer) RemoveFeedSub(ch chan replication.FeedNotify) {
+	c.feedMu.Lock()
+	defer c.feedMu.Unlock()
+	delete(c.feedSubs, ch)
+}
+
+// notifyFeedSubs hands one committed batch to the live feeds, in feed
+// order. A full subscriber buffer means a slow peer: its channel is closed
+// and the peer reconnects from its cursor. Committer goroutine only.
+func (c *committer) notifyFeedSubs(ops []storage.StoredOp) {
+	c.feedMu.Lock()
+	defer c.feedMu.Unlock()
+	if len(c.feedSubs) == 0 || len(ops) == 0 {
+		return
+	}
+	for _, so := range ops {
+		for ch := range c.feedSubs {
+			select {
+			case ch <- replication.FeedNotify{Op: so.Op, FeedSeq: so.FeedSeq}:
+			default:
+				close(ch)
+				delete(c.feedSubs, ch)
+			}
+		}
+	}
+}
+
+// Replicate implements replication.CommitterSink: it hands one peer batch to
+// the committer goroutine and waits for it to commit.
+func (c *committer) Replicate(peer string, ops []storage.StoredOp, lastFeedSeq uint64) error {
+	if len(ops) == 0 {
+		return nil
+	}
+	req := &replicatedOpsReq{peer: peer, ops: ops, lastFeedSeq: lastFeedSeq, done: make(chan error, 1)}
+	select {
+	case c.reqs <- req:
+	case <-c.stopped:
+		return fmt.Errorf("replication: node shutting down")
+	}
+	select {
+	case err := <-req.done:
+		return err
+	case <-c.stopped:
+		return fmt.Errorf("replication: node shutting down")
+	}
+}
+
+// handleReplicate applies a peer's ops without rule checks (PLAN.md M9.2):
+// the origin node already decided — rejected ops arrive as their noops.
+// Duplicates are ignored; out-of-order or missing-dep errors from a feed are
+// bugs (a feed is the sender's causally ordered apply log) and are skipped
+// with an error log. The peer cursor is written in the same batch as the ops
+// it covers.
+func (c *committer) handleReplicate(r *replicatedOpsReq) {
+	batch := &storage.Batch{Sync: c.cfg.FsyncAlways()}
+	var (
+		broadcasts []broadcastEntry
+		touched    = make(map[crdt.DocKey]struct{})
+	)
+	for _, so := range r.ops {
+		op := so.Op
+		if err := crdt.ValidateKey(op.Key); err != nil || crdt.ValidateActor(op.ID.Actor) != nil || crdt.ValidateField(op.Field) != nil {
+			c.log.Error("replicated op invalid identity; skipping", slog.Any("op", op.ID), slog.Any("err", err))
+			continue
+		}
+		sch, ok := c.schemas.Schema(op.Key.Coll)
+		if !ok {
+			sch = crdt.Schema{} // unknown collection: only noops can apply
+		}
+		entry, err := c.loadDoc(op.Key, sch, touched)
+		if err != nil {
+			c.log.Error("load replicated document", slog.Any("key", op.Key), slog.Any("err", err))
+			continue
+		}
+		err = entry.doc.Apply(op, sch)
+		switch {
+		case err == nil:
+			c.stageCommitted(op, entry, batch, &broadcasts, nil)
+		case errors.Is(err, crdt.ErrDuplicate):
+			// Already applied via another feed or our own commits.
+		case errors.Is(err, crdt.ErrOutOfOrder), errors.Is(err, crdt.ErrMissingDeps):
+			// Unreachable for a causally ordered feed; skipping leaves a
+			// per-actor gap that only a misconfigured cluster can cause.
+			c.log.Error("replicated op out of order; skipping", slog.Any("op", op.ID), slog.Any("err", err))
+		case errors.Is(err, crdt.ErrInvalid):
+			// The origin applied a rule or schema we do not have: converge
+			// on "this op did nothing" to keep per-actor seqs contiguous.
+			noop := op
+			noop.Kind = crdt.KindNoop
+			noop.Value, noop.Delta, noop.Ref, noop.Observed = nil, 0, nil, nil
+			if err := entry.doc.Apply(noop, sch); err != nil {
+				c.log.Error("apply replicated noop", slog.Any("op", op.ID), slog.Any("err", err))
+				continue
+			}
+			c.log.Error("replicated op invalid locally; stored as noop", slog.Any("op", op.ID))
+			c.stageCommitted(noop, entry, batch, &broadcasts, nil)
+		default:
+			c.log.Error("apply replicated op", slog.Any("op", op.ID), slog.Any("err", err))
+		}
+	}
+	if batch.Meta == nil {
+		batch.Meta = make(map[string][]byte)
+	}
+	batch.Meta["p/"+r.peer] = replication.CursorBytes(r.lastFeedSeq)
+	if err := c.store.Commit(batch); err != nil {
+		c.log.Error("replication commit failed", slog.String("peer", r.peer), slog.Any("err", err))
+		for key := range touched {
+			c.lru.Remove(key)
+		}
+		r.done <- fmt.Errorf("replication: commit failed: %w", err)
+		return
+	}
+	c.batches.Add(1)
+	c.notifyFeedSubs(batch.Ops)
+	c.broadcastBatch(broadcasts)
+	r.done <- nil
+}
+
+// broadcastBatch fans a replication commit out to local subscribers in feed
+// order.
+func (c *committer) broadcastBatch(broadcasts []broadcastEntry) {
+	for _, b := range broadcasts {
+		c.broadcast(b)
 	}
 }
 

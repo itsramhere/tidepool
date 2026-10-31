@@ -76,3 +76,21 @@ func TestFsyncNever(t *testing.T) {
 		t.Error("FsyncAlways() = true for fsync never")
 	}
 }
+
+// TestLoadDeployConfigs: the shipped deploy configs must stay loadable.
+func TestLoadDeployConfigs(t *testing.T) {
+	for _, f := range []string{"../../deploy/node1.yaml", "../../deploy/node2.yaml", "../../deploy/node3.yaml"} {
+		cfg, err := LoadConfig(f)
+		if err != nil {
+			t.Fatalf("LoadConfig(%s): %v", f, err)
+		}
+		if len(cfg.Peers) != 2 {
+			t.Errorf("%s: peers = %d, want 2", f, len(cfg.Peers))
+		}
+		for _, p := range cfg.Peers {
+			if p.ID == "" || p.URL == "" || p.Secret == "" {
+				t.Errorf("%s: incomplete peer %+v", f, p)
+			}
+		}
+	}
+}

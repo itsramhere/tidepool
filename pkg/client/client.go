@@ -415,6 +415,7 @@ func (c *Client) handleSnapshot(data []byte) {
 	ds := c.ensureDocLocked(doc.Key)
 	ds.confirmed = doc
 	ds.viewValid = false
+	c.persistLocked()
 	c.notifyLocked()
 	c.mu.Unlock()
 	c.fireChange(doc.Key)
@@ -423,6 +424,9 @@ func (c *Client) handleSnapshot(data []byte) {
 // handleOpFrame applies one committed op to the confirmed state (duplicates
 // are ignored — the op is already known), removes it from pending when it is
 // one of ours, and surfaces rejected ops (delivered as noops) as errors.
+// Any state change is persisted: a restart or a move to another client
+// process must never lose applied ops (a lost confirmed update regresses the
+// actor's lamport/seq clocks and splits replicas).
 func (c *Client) handleOpFrame(data []byte) {
 	var f protocol.OpFrame
 	if err := json.Unmarshal(data, &f); err != nil {
@@ -431,6 +435,7 @@ func (c *Client) handleOpFrame(data []byte) {
 	}
 	c.mu.Lock()
 	ds := c.ensureDocLocked(f.Op.Key)
+	changed := false
 	if err := ds.confirmed.Apply(f.Op, c.schemas[f.Op.Key.Coll]); err != nil {
 		if !errors.Is(err, crdt.ErrDuplicate) {
 			c.log.Warn("client: apply remote op", slog.Any("op", f.Op.ID), slog.Any("err", err))
@@ -439,18 +444,25 @@ func (c *Client) handleOpFrame(data []byte) {
 		}
 	} else {
 		ds.viewValid = false
+		changed = true
 	}
 	if i := pendingIndexOf(ds, f.Op.ID); i >= 0 {
 		ds.pending = append(ds.pending[:i], ds.pending[i+1:]...)
 		delete(ds.sent, f.Op.ID)
+		changed = true
 		if f.Op.Kind == crdt.KindNoop {
 			// The server stored our op as a noop: it was rejected.
 			c.emitErrorLocked(&OpError{OpID: f.Op.ID, Key: f.Op.Key, Status: protocol.StatusRejected, Reason: "rejected"})
 		}
 	}
-	c.notifyLocked()
+	if changed {
+		c.persistLocked()
+		c.notifyLocked()
+	}
 	c.mu.Unlock()
-	c.fireChange(f.Op.Key)
+	if changed {
+		c.fireChange(f.Op.Key)
+	}
 }
 
 // handleEvict drops a document that left the subscription's shape — unless
@@ -473,6 +485,7 @@ func (c *Client) handleEvict(data []byte) {
 		return
 	}
 	delete(c.docs, f.Key)
+	c.persistLocked()
 	c.notifyLocked()
 	c.mu.Unlock()
 	c.fireChange(f.Key)
@@ -566,9 +579,9 @@ func (c *Client) handleAck(data []byte) {
 					c.log.Warn("client: apply dup op", slog.Any("op", r.ID), slog.Any("err", err))
 				} else {
 					ds.viewValid = false
+					touched = true
 				}
 				ds.pending = append(ds.pending[:i], ds.pending[i+1:]...)
-				touched = true
 			}
 			ds.retryAttempt = 0
 		case protocol.StatusRejected:
@@ -599,6 +612,7 @@ func (c *Client) handleAck(data []byte) {
 		}
 	}
 	if touched {
+		c.persistLocked()
 		c.notifyLocked()
 	}
 	c.mu.Unlock()

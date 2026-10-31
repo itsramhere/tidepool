@@ -1,0 +1,43 @@
+# Three-node Tidepool cluster (PLAN.md M9.6): any client may connect to any
+# node; nodes replicate their op feeds over the tidepool network.
+#   docker compose -f deploy/docker-compose.yml up
+# Then point clients at ws://localhost:7200/v1/sync (or 7201/7202).
+services:
+  node1:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["--config", "/etc/tidepool/node.yaml"]
+    volumes:
+      - ./node1.yaml:/etc/tidepool/node.yaml:ro
+      - ./rules.yaml:/etc/tidepool/rules.yaml:ro
+      - node1-data:/data
+    ports:
+      - "7200:7200"
+  node2:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["--config", "/etc/tidepool/node.yaml"]
+    volumes:
+      - ./node2.yaml:/etc/tidepool/node.yaml:ro
+      - ./rules.yaml:/etc/tidepool/rules.yaml:ro
+      - node2-data:/data
+    ports:
+      - "7201:7201"
+  node3:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["--config", "/etc/tidepool/node.yaml"]
+    volumes:
+      - ./node3.yaml:/etc/tidepool/node.yaml:ro
+      - ./rules.yaml:/etc/tidepool/rules.yaml:ro
+      - node3-data:/data
+    ports:
+      - "7202:7202"
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:

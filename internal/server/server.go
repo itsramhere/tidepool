@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+	"sync"
 
 	"github.com/coder/websocket"
+	"github.com/itsramhere/tidepool/internal/replication"
 	"github.com/itsramhere/tidepool/internal/schema"
 	"github.com/itsramhere/tidepool/internal/storage"
 )
@@ -17,24 +20,55 @@ type Server struct {
 	store   storage.Store
 	comm    *committer
 	log     *slog.Logger
+
+	ctx       context.Context
+	cancel    context.CancelFunc
+	pullers   *sync.WaitGroup
+	replicate http.Handler
+	stopOnce  sync.Once
 }
 
-// New builds a server and starts its committer goroutine. Call Stop to shut
-// it down.
+// New builds a server and starts its committer goroutine. When peers are
+// configured it also mounts the replication feed endpoint and starts one
+// puller per peer. Call Stop to shut it down.
 func New(cfg *Config, schemas *schema.Config, store storage.Store, log *slog.Logger) (*Server, error) {
 	comm, err := newCommitter(cfg, schemas, store, log)
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, schemas: schemas, store: store, comm: comm, log: log}
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &Server{
+		cfg: cfg, schemas: schemas, store: store, comm: comm, log: log,
+		ctx: ctx, cancel: cancel, pullers: &sync.WaitGroup{},
+	}
 	go comm.run()
+
+	if len(cfg.Peers) > 0 {
+		secrets := make([]string, 0, len(cfg.Peers))
+		peers := make([]replication.PeerConfig, 0, len(cfg.Peers))
+		for _, p := range cfg.Peers {
+			secrets = append(secrets, p.Secret)
+			peers = append(peers, replication.PeerConfig{ID: p.ID, URL: p.URL, Secret: p.Secret})
+		}
+		s.replicate = replication.Handler(comm, store, secrets, log)
+		puller := replication.NewPuller(peers, store, comm, log)
+		s.pullers.Add(1)
+		go func() {
+			defer s.pullers.Done()
+			puller.Run(ctx)
+		}()
+	}
 	return s, nil
 }
 
-// Handler returns the HTTP handler serving /v1/sync and /healthz.
+// Handler returns the HTTP handler serving /v1/sync, /v1/replicate (when
+// peers are configured) and /healthz.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/sync", s.handleSync)
+	if s.replicate != nil {
+		mux.Handle("GET /v1/replicate", s.replicate)
+	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
@@ -59,15 +93,19 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 	sess.readLoop()
 }
 
-// Stop shuts the committer down gracefully and closes the store. Requests
-// still queued when Stop is called are processed first; the request channel
-// itself is never closed, so dying sessions can always deliver their
-// cleanup.
+// Stop shuts the pullers down, then the committer gracefully, then closes
+// the store. Requests still queued when Stop is called are processed first;
+// the request channel itself is never closed, so dying sessions can always
+// deliver their cleanup.
 func (s *Server) Stop() {
-	s.comm.closed.Store(true)
-	close(s.comm.stopped)
-	<-s.comm.done
-	if err := s.store.Close(); err != nil {
-		s.log.Error("close store", slog.Any("err", err))
-	}
+	s.stopOnce.Do(func() {
+		s.cancel()
+		s.pullers.Wait()
+		s.comm.closed.Store(true)
+		close(s.comm.stopped)
+		<-s.comm.done
+		if err := s.store.Close(); err != nil {
+			s.log.Error("close store", slog.Any("err", err))
+		}
+	})
 }
