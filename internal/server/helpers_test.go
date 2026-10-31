@@ -46,13 +46,20 @@ var testSchemas = func() *schema.Config {
 // newTestServer starts a Server over a memory store on an httptest server.
 func newTestServer(t *testing.T, mutate func(*Config)) (*httptest.Server, *Server) {
 	t.Helper()
-	return newTestServerOnListener(t, mutate, nil)
+	return newTestServerWithSchemas(t, testSchemas, mutate)
+}
+
+// newTestServerWithSchemas is newTestServer with a custom rules.yaml config,
+// e.g. one carrying CEL authorization rules.
+func newTestServerWithSchemas(t *testing.T, schemas *schema.Config, mutate func(*Config)) (*httptest.Server, *Server) {
+	t.Helper()
+	return newTestServerOnListener(t, schemas, mutate, nil)
 }
 
 // newTestServerOnListener is newTestServer with an optional listener
 // decorator, applied before the server starts accepting (used to pin socket
 // buffer sizes for the slow-consumer test).
-func newTestServerOnListener(t *testing.T, mutate func(*Config), wrap func(net.Listener) net.Listener) (*httptest.Server, *Server) {
+func newTestServerOnListener(t *testing.T, schemas *schema.Config, mutate func(*Config), wrap func(net.Listener) net.Listener) (*httptest.Server, *Server) {
 	t.Helper()
 	cfg := &Config{
 		NodeID:            "test-node",
@@ -66,7 +73,7 @@ func newTestServerOnListener(t *testing.T, mutate func(*Config), wrap func(net.L
 	if mutate != nil {
 		mutate(cfg)
 	}
-	srv, err := New(cfg, testSchemas, storage.NewMemoryStore(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv, err := New(cfg, schemas, storage.NewMemoryStore(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -168,6 +175,32 @@ func mustToken(t *testing.T, uid string) string {
 		t.Fatalf("issue token: %v", err)
 	}
 	return token
+}
+
+// mustTokenWithClaims issues a token carrying extra claims (e.g. board
+// memberships for the authorization rules).
+func mustTokenWithClaims(t *testing.T, uid string, claims map[string]any) string {
+	t.Helper()
+	token, err := auth.IssueWithClaims(testJWTSecret, uid, claims, time.Minute)
+	if err != nil {
+		t.Fatalf("issue token with claims: %v", err)
+	}
+	return token
+}
+
+// recvTimeout reads one frame or reports ok=false when d elapses first.
+func recvTimeout(t *testing.T, conn *websocket.Conn, d time.Duration) (json.RawMessage, bool) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	typ, data, err := conn.Read(ctx)
+	if err != nil {
+		return nil, false
+	}
+	if typ != websocket.MessageText {
+		t.Fatal("read: expected a text frame")
+	}
+	return json.RawMessage(data), true
 }
 
 // helloAs authenticates a session and waits for the welcome frame.

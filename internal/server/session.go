@@ -29,6 +29,11 @@ type session struct {
 	conn  *websocket.Conn
 	actor crdt.ActorID
 	uid   string
+	// auth holds uid plus every JWT claim, evaluated by the authorization
+	// rules on the committer goroutine. Written once during the handshake,
+	// before the session can subscribe or push, so the committer never
+	// races a read.
+	auth map[string]any
 
 	writeCh    chan []byte
 	writerDone chan struct{}
@@ -199,7 +204,7 @@ func (s *session) readLoop() {
 				s.fail("unsupported_version", "protocol version mismatch")
 				return
 			}
-			uid, err := auth.Verify(s.srv.cfg.JWTSecret, hello.Token)
+			uid, claims, err := auth.Verify(s.srv.cfg.JWTSecret, hello.Token)
 			if err != nil {
 				s.fail("unauthorized", "invalid token")
 				return
@@ -209,6 +214,8 @@ func (s *session) readLoop() {
 				return
 			}
 			s.uid = uid
+			claims["uid"] = uid // rules see uid alongside every claim
+			s.auth = claims
 			s.actor = hello.Actor
 			authed = true
 			s.sendMessage(protocol.NewWelcome(s.srv.cfg.NodeID, s.actor))

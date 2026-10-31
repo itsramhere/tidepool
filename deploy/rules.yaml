@@ -1,6 +1,12 @@
 # Tidepool rules file: collections with their field types, and per-collection
-# CEL rules. Rules are parsed from M5 on but only evaluated from M7 — until
-# then every read and write is allowed.
+# CEL rules (PLAN.md M7). Rule variables: auth (uid + JWT claims), doc
+# (values before the op), newDoc (values after), isNew (the op creates its
+# field), op ({field, kind}). Evaluation errors count as deny.
+#
+# cards: readable only for boards listed in the caller's "boards" claim;
+# writable by the document owner, while anyone may touch the shared
+# counter/set/list fields; the creator of an unowned field must claim
+# ownership by making newDoc.owner their own uid.
 collections:
   cards:
     fields:
@@ -13,5 +19,5 @@ collections:
       checklist: list
       description: text
     rules:
-      read: "true"
-      write: "true"
+      read: "doc.board in auth.boards"
+      write: "isNew ? newDoc.owner == auth.uid : (doc.owner == auth.uid || op.field in ['votes', 'labels', 'checklist'])"

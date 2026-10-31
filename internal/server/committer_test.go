@@ -465,7 +465,7 @@ func (l tinySendListener) Accept() (net.Conn, error) {
 }
 
 func TestSlowConsumerDisconnected(t *testing.T) {
-	ts, srv := newTestServerOnListener(t, func(cfg *Config) { cfg.SessionSendBuffer = 2 },
+	ts, srv := newTestServerOnListener(t, testSchemas, func(cfg *Config) { cfg.SessionSendBuffer = 2 },
 		func(l net.Listener) net.Listener { return tinySendListener{l} })
 	reader := dialTinyBuffer(t, ts)
 	hello(t, reader, bobActor)

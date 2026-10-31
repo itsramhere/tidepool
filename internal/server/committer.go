@@ -7,6 +7,7 @@ import (
 	"sort"
 	"sync/atomic"
 
+	"github.com/google/cel-go/cel"
 	"github.com/hashicorp/golang-lru/v2"
 	"github.com/itsramhere/tidepool/internal/crdt"
 	"github.com/itsramhere/tidepool/internal/protocol"
@@ -67,10 +68,13 @@ type removeSessionReq struct {
 }
 
 // broadcastEntry is one committed op awaiting fan-out after the commit.
+// doc is the post-apply document state, read by the read rule (committer
+// goroutine only).
 type broadcastEntry struct {
 	op     crdt.Op
 	coll   string
 	author *session
+	doc    *crdt.Document
 }
 
 // committer serializes all document and store access (PLAN.md golden rule
@@ -259,9 +263,31 @@ func (c *committer) stagePush(r *pushReq, op crdt.Op, batch *storage.Batch, touc
 		return invalid("internal_error")
 	}
 
-	err = entry.doc.Apply(op, sch)
+	// When a write rule exists, trial-apply on a clone so the rule sees the
+	// would-be state without mutating the document (a denial must leave the
+	// document untouched).
+	coll, _ := c.schemas.Collection(op.Key.Coll)
+	_, hasWriteRule := coll.WriteRule()
+	target := entry.doc
+	if hasWriteRule {
+		target = entry.doc.Clone()
+	}
+
+	err = target.Apply(op, sch)
 	switch {
 	case err == nil:
+		if hasWriteRule && !c.writeAllowed(r.sess.auth, entry.doc, target, op) {
+			return c.rejectWithNoop(op, entry, sch, batch, broadcasts, r.sess, "rule_denied")
+		}
+		if target != entry.doc {
+			// Commit the trial state by applying for real.
+			if err := entry.doc.Apply(op, sch); err != nil {
+				// Unreachable: the same op just applied cleanly to a clone
+				// of this document.
+				c.log.Error("re-apply after rule allow", slog.Any("op", op.ID), slog.Any("err", err))
+				return invalid("internal_error")
+			}
+		}
 		c.stageCommitted(op, entry, batch, broadcasts, r.sess)
 		return protocol.AckResult{ID: op.ID, Status: protocol.StatusOK}
 	case errors.Is(err, crdt.ErrDuplicate):
@@ -271,21 +297,52 @@ func (c *committer) stagePush(r *pushReq, op crdt.Op, batch *storage.Batch, touc
 	case errors.Is(err, crdt.ErrInvalid):
 		// Store a noop in place of the rejected op: the author and every
 		// subscriber converge on "this op did nothing".
-		noop := op
-		noop.Kind = crdt.KindNoop
-		noop.Value, noop.Delta, noop.Ref, noop.Observed = nil, 0, nil, nil
-		if err := entry.doc.Apply(noop, sch); err != nil {
-			// Unreachable: the original op passed the seq gates, and a noop
-			// only advances the VV.
-			c.log.Error("apply noop", slog.Any("op", op.ID), slog.Any("err", err))
-			return invalid("internal_error")
-		}
-		c.stageCommitted(noop, entry, batch, broadcasts, r.sess)
-		return protocol.AckResult{ID: op.ID, Status: protocol.StatusRejected, Reason: "invalid_op"}
+		return c.rejectWithNoop(op, entry, sch, batch, broadcasts, r.sess, "invalid_op")
 	default:
 		c.log.Error("apply", slog.Any("op", op.ID), slog.Any("err", err))
 		return invalid("internal_error")
 	}
+}
+
+// writeAllowed evaluates the collection's write rule: doc holds the values
+// before the op, trial the values after. Evaluation errors deny (PLAN.md
+// M7: errors count as deny) and are logged at debug level.
+func (c *committer) writeAllowed(auth map[string]any, before, trial *crdt.Document, op crdt.Op) bool {
+	coll, _ := c.schemas.Collection(op.Key.Coll)
+	prog, ok := coll.WriteRule()
+	if !ok {
+		return true
+	}
+	allowed, err := schema.Eval(prog, schema.RuleInputs{
+		Auth:   auth,
+		Doc:    before.Values(),
+		NewDoc: trial.Values(),
+		IsNew:  before.Fields[op.Field] == nil,
+		Field:  op.Field,
+		Kind:   string(op.Kind),
+	})
+	if err != nil {
+		c.log.Debug("write rule eval failed; denying", slog.Any("op", op.ID), slog.Any("err", err))
+		return false
+	}
+	return allowed
+}
+
+// rejectWithNoop stores a noop in place of a denied op and reports it as
+// rejected: the author and every subscriber converge on "this op did
+// nothing".
+func (c *committer) rejectWithNoop(op crdt.Op, entry *docEntry, sch crdt.Schema, batch *storage.Batch, broadcasts *[]broadcastEntry, sess *session, reason string) protocol.AckResult {
+	noop := op
+	noop.Kind = crdt.KindNoop
+	noop.Value, noop.Delta, noop.Ref, noop.Observed = nil, 0, nil, nil
+	if err := entry.doc.Apply(noop, sch); err != nil {
+		// Unreachable: the original op passed the seq gates, and a noop
+		// only advances the VV.
+		c.log.Error("apply noop", slog.Any("op", op.ID), slog.Any("err", err))
+		return protocol.AckResult{ID: op.ID, Status: protocol.StatusInvalid, Reason: "internal_error"}
+	}
+	c.stageCommitted(noop, entry, batch, broadcasts, sess)
+	return protocol.AckResult{ID: op.ID, Status: protocol.StatusRejected, Reason: reason}
 }
 
 // stageCommitted records one applied op in the batch with fresh DocSeq and
@@ -312,7 +369,7 @@ func (c *committer) stageCommitted(op crdt.Op, entry *docEntry, batch *storage.B
 	}
 	batch.Metas[op.Key] = entry.meta
 	batch.Ops = append(batch.Ops, storage.StoredOp{Op: op, DocSeq: entry.meta.LastDocSeq, FeedSeq: c.nextFeedSeq})
-	*broadcasts = append(*broadcasts, broadcastEntry{op: op, coll: op.Key.Coll, author: author})
+	*broadcasts = append(*broadcasts, broadcastEntry{op: op, coll: op.Key.Coll, author: author, doc: entry.doc})
 }
 
 // loadDoc returns the cached entry or loads it from the store.
@@ -355,8 +412,24 @@ func (c *committer) stageSubscribe(r *subscribeReq) {
 	for _, docID := range existing {
 		existingSet[docID] = struct{}{}
 	}
+	coll, _ := c.schemas.Collection(r.coll)
+	readProg, hasRead := coll.ReadRule()
 	for _, docID := range existing {
 		key := crdt.DocKey{Coll: r.coll, Doc: docID}
+		// A document the read rule denies is invisible to this session:
+		// no snapshot, no ops, no future broadcasts (M7 v1 read rule; M8
+		// adds move-in/move-out shapes).
+		if hasRead {
+			doc, _, err := storage.LoadDocument(c.store, key, sch)
+			if err != nil {
+				c.log.Error("load doc for read check", slog.Any("key", key), slog.Any("err", err))
+				r.sess.fail("internal", "subscribe failed")
+				return
+			}
+			if !c.readAllowed(r.sess.auth, doc.Values(), readProg) {
+				continue
+			}
+		}
 		if vv, known := r.known[docID]; known {
 			// Send only the ops the client is missing, in docSeq order.
 			err := c.store.DocOps(key, 0, func(so storage.StoredOp) error {
@@ -404,11 +477,21 @@ func (c *committer) stageSubscribe(r *subscribeReq) {
 }
 
 // broadcast fans one committed op out to every subscription on its
-// collection, then echoes it to the author if none of the author's own
-// subscriptions received it (G2).
+// collection whose read rule allows the document, then echoes it to the
+// author if none of the author's own subscriptions received it (G2). The
+// author echo is unconditional: the write rule already admitted the author.
 func (c *committer) broadcast(b broadcastEntry) {
+	coll, _ := c.schemas.Collection(b.coll)
+	readProg, hasRead := coll.ReadRule()
+	var values map[string]any
+	if hasRead {
+		values = b.doc.Values()
+	}
 	authorMatched := false
 	for _, sub := range c.subs.forColl(b.coll) {
+		if hasRead && !c.readAllowed(sub.sess.auth, values, readProg) {
+			continue
+		}
 		sub.sess.sendMessage(protocol.NewOp(sub.id, b.op))
 		if sub.sess == b.author {
 			authorMatched = true
@@ -417,4 +500,16 @@ func (c *committer) broadcast(b broadcastEntry) {
 	if b.author != nil && !authorMatched {
 		b.author.sendMessage(protocol.NewOp("", b.op))
 	}
+}
+
+// readAllowed evaluates one read rule with doc = the document's current
+// values. Evaluation errors deny (PLAN.md M7) and are logged at debug
+// level.
+func (c *committer) readAllowed(auth map[string]any, values map[string]any, prog cel.Program) bool {
+	allowed, err := schema.Eval(prog, schema.RuleInputs{Auth: auth, Doc: values, NewDoc: values})
+	if err != nil {
+		c.log.Debug("read rule eval failed; denying", slog.Any("err", err))
+		return false
+	}
+	return allowed
 }

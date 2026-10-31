@@ -57,7 +57,14 @@ type node struct {
 // is empty) listening on addr (a fresh port when empty), stopped at test end.
 func startNode(t *testing.T, dir, addr string) *node {
 	t.Helper()
-	n := startNodeRaw(t, dir, addr)
+	return startNodeWithRules(t, dir, addr, rulesYAML)
+}
+
+// startNodeWithRules is startNode with a custom rules.yaml body, for tests
+// that exercise authorization rules.
+func startNodeWithRules(t *testing.T, dir, addr, rules string) *node {
+	t.Helper()
+	n := startNodeRaw(t, dir, addr, rules)
 	t.Cleanup(func() {
 		n.ts.Close()
 		n.srv.Stop()
@@ -65,11 +72,11 @@ func startNode(t *testing.T, dir, addr string) *node {
 	return n
 }
 
-// startNodeRaw is startNode without cleanup registration, for tests that
+// startNodeRaw builds a node without cleanup registration, for tests that
 // stop and restart the node themselves.
-func startNodeRaw(t *testing.T, dir, addr string) *node {
+func startNodeRaw(t *testing.T, dir, addr, rules string) *node {
 	t.Helper()
-	schemas, err := schema.Parse([]byte(rulesYAML))
+	schemas, err := schema.Parse([]byte(rules))
 	if err != nil {
 		t.Fatalf("parse rules: %v", err)
 	}
@@ -331,7 +338,7 @@ func TestOfflineEditsConvergeAfterReconnect(t *testing.T) {
 // all survive.
 func TestServerRestartLosesNothing(t *testing.T) {
 	dir := t.TempDir()
-	n1 := startNodeRaw(t, dir, "")
+	n1 := startNodeRaw(t, dir, "", rulesYAML)
 	c := newClient(t, n1, nil)
 	c.Subscribe("cards", "")
 	waitSynced(t, c)
@@ -523,4 +530,149 @@ func TestFlakyConnectionConverges(t *testing.T) {
 	}
 	waitDocValues(t, d1, want)
 	waitDocValues(t, b.Doc("cards", "stress"), want)
+}
+
+// ruleSchemasYAML is the PLAN.md M7 example over the full field set: cards
+// readable only for boards in the caller's claim; writes by the owner, with
+// shared counter/set/list fields open to everyone who can read; field
+// creation claims ownership.
+const ruleSchemasYAML = `collections:
+  cards:
+    fields:
+      title: register
+      owner: register
+      board: register
+      votes: counter
+      labels: set
+      checklist: list
+      description: text
+    rules:
+      read: "doc.board in auth.boards"
+      write: "isNew ? newDoc.owner == auth.uid : (doc.owner == auth.uid || op.field in ['votes', 'labels', 'checklist'])"
+`
+
+// mustTokenFor issues a token for uid with a boards claim.
+func mustTokenFor(t *testing.T, uid string, boards ...string) string {
+	t.Helper()
+	claim := make([]any, len(boards))
+	for i, b := range boards {
+		claim[i] = b
+	}
+	token, err := auth.IssueWithClaims(testJWTSecret, uid, map[string]any{"boards": claim}, time.Hour)
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+	return token
+}
+
+// TestAuthorizationRules: PLAN.md M7 task 6 — Bob's write to Alice's card
+// title is rejected, comes back as a noop, Bob's client rolls back to
+// Alice's value, both converge; and Bob never receives docs of a board
+// outside his claim.
+func TestAuthorizationRules(t *testing.T) {
+	n := startNodeWithRules(t, "", "", ruleSchemasYAML)
+	schemaFor := func(o *client.Options) {
+		o.Schemas = map[string]crdt.Schema{"cards": {
+			"title": crdt.FieldRegister, "owner": crdt.FieldRegister, "board": crdt.FieldRegister,
+			"votes": crdt.FieldCounter, "labels": crdt.FieldSet,
+			"checklist": crdt.FieldList, "description": crdt.FieldText,
+		}}
+	}
+	alice := newClient(t, n, func(o *client.Options) {
+		schemaFor(o)
+		o.Token = mustTokenFor(t, "alice", "b1", "b2")
+	})
+	alice.Subscribe("cards", "")
+	bob := newClient(t, n, func(o *client.Options) {
+		schemaFor(o)
+		o.Actor = crdt.ActorID("bbbbbbbbbbbbbbbb")
+		o.Token = mustTokenFor(t, "bob", "b1")
+	})
+
+	// Alice creates card1: owner must come first (field creation claims
+	// ownership), then board, then the rest.
+	card1 := alice.Doc("cards", "card1")
+	if err := card1.Set("owner", "alice"); err != nil {
+		t.Fatalf("Set owner: %v", err)
+	}
+	if err := card1.Set("board", "b1"); err != nil {
+		t.Fatalf("Set board: %v", err)
+	}
+	if err := card1.Set("title", "alice's"); err != nil {
+		t.Fatalf("Set title: %v", err)
+	}
+	if err := card1.Add("labels", "red"); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := card1.Inc("votes", 1); err != nil {
+		t.Fatalf("Inc: %v", err)
+	}
+	waitSynced(t, alice)
+
+	// Bob subscribes and receives card1 in full (board b1 is in his claim).
+	bob.Subscribe("cards", "")
+	bcard1 := bob.Doc("cards", "card1")
+	waitDocValues(t, bcard1, map[string]any{
+		"owner": "alice", "board": "b1", "title": "alice's",
+		"labels": []string{"red"}, "votes": int64(1),
+	})
+
+	// Bob's title write is denied; the noop echo rolls his client back to
+	// Alice's value and surfaces the rejection on Errors().
+	if err := bcard1.Set("title", "stolen"); err != nil {
+		t.Fatalf("bob Set title: %v", err)
+	}
+	select {
+	case err := <-bob.Errors():
+		opErr, ok := err.(*client.OpError)
+		if !ok || opErr.Status != "rejected" {
+			t.Fatalf("error = %v, want rejected OpError", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("no rejection surfaced on Bob's Errors()")
+	}
+	waitSynced(t, bob)
+	waitDocValues(t, bcard1, map[string]any{
+		"owner": "alice", "board": "b1", "title": "alice's",
+		"labels": []string{"red"}, "votes": int64(1),
+	})
+
+	// Bob may write the shared counter; both clients converge on it.
+	if err := bcard1.Inc("votes", 4); err != nil {
+		t.Fatalf("bob Inc: %v", err)
+	}
+	waitSynced(t, bob)
+	waitDocValues(t, card1, map[string]any{
+		"owner": "alice", "board": "b1", "title": "alice's",
+		"labels": []string{"red"}, "votes": int64(5),
+	})
+	waitDocValues(t, bcard1, map[string]any{
+		"owner": "alice", "board": "b1", "title": "alice's",
+		"labels": []string{"red"}, "votes": int64(5),
+	})
+
+	// Alice creates card2 on board b2 — outside Bob's claim. He must never
+	// receive it: no snapshot, no ops, an empty local view.
+	card2 := alice.Doc("cards", "card2")
+	if err := card2.Set("owner", "alice"); err != nil {
+		t.Fatalf("Set owner: %v", err)
+	}
+	if err := card2.Set("board", "b2"); err != nil {
+		t.Fatalf("Set board: %v", err)
+	}
+	if err := card2.Set("title", "secret"); err != nil {
+		t.Fatalf("Set title: %v", err)
+	}
+	waitSynced(t, alice)
+	waitDocValues(t, card2, map[string]any{
+		"owner": "alice", "board": "b2", "title": "secret",
+	})
+	hidden := bob.Doc("cards", "card2")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := hidden.Values(); len(got) != 0 {
+			t.Fatalf("bob sees hidden card2 fields %v, want none", got)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }

@@ -15,12 +15,39 @@ func TestIssueVerifyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	uid, err := Verify(testSecret, token)
+	uid, claims, err := Verify(testSecret, token)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
 	if uid != "alice" {
 		t.Errorf("uid = %q, want alice", uid)
+	}
+	if claims["sub"] != "alice" {
+		t.Errorf("claims[sub] = %v, want alice", claims["sub"])
+	}
+}
+
+func TestIssueWithClaimsRoundTrip(t *testing.T) {
+	token, err := IssueWithClaims(testSecret, "alice", map[string]any{
+		"boards": []string{"b1", "b2"},
+		"role":   "editor",
+	}, time.Hour)
+	if err != nil {
+		t.Fatalf("IssueWithClaims: %v", err)
+	}
+	uid, claims, err := Verify(testSecret, token)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if uid != "alice" {
+		t.Errorf("uid = %q, want alice", uid)
+	}
+	boards, ok := claims["boards"].([]any)
+	if !ok || len(boards) != 2 || boards[0] != "b1" {
+		t.Errorf("claims[boards] = %#v, want [b1 b2]", claims["boards"])
+	}
+	if claims["role"] != "editor" {
+		t.Errorf("claims[role] = %v, want editor", claims["role"])
 	}
 }
 
@@ -60,7 +87,7 @@ func TestVerifyRejects(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if uid, err := Verify(testSecret, tt.token); err == nil {
+			if uid, _, err := Verify(testSecret, tt.token); err == nil {
 				t.Errorf("Verify(%s token) = (%q, nil), want error", tt.name, uid)
 			}
 		})
