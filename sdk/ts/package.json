@@ -1,0 +1,29 @@
+{
+  "name": "@tidepool/client",
+  "version": "0.1.0",
+  "description": "Offline-first TypeScript client SDK for Tidepool: CRDT documents, shape subscriptions, and a reactive sync client byte-compatible with the Go SDK.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["crdt", "local-first", "sync", "offline-first"],
+  "license": "MIT",
+  "dependencies": {
+    "idb": "^8.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

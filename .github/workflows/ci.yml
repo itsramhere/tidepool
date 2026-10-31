@@ -29,4 +29,28 @@ jobs:
       - name: go test -race
         run: go test -race ./...
 
-  # ts: added in M10 — runs npm test and npx tsc --noEmit inside sdk/ts.
+  ts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The e2e suite spawns a real server, so the TS job needs Go too.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sdk/ts/package-lock.json
+
+      - name: typecheck + build
+        run: |
+          npm run typecheck
+          npm run build
+        working-directory: sdk/ts
+
+      - name: npm test
+        run: npm test
+        working-directory: sdk/ts

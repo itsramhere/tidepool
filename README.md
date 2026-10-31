@@ -22,6 +22,11 @@ byte-compatible by generated cross-language conformance vectors.
 - **Offline-first Go client** (`pkg/client`): local confirmed state plus a
   pending op queue, automatic reconnect with jittered backoff, re-subscribe
   and re-push on every reconnect, pluggable `LocalStore` persistence.
+- **Byte-compatible TypeScript client** (`sdk/ts`, `@tidepool/client`): the
+  same CRDT engine ported 1:1, held identical to Go by 50 generated
+  conformance vectors (values and snapshots compared as canonical JSON),
+  with a reactive API, memory and IndexedDB persistence, and zero runtime
+  dependencies beyond `idb`.
 - **Group commit to Pebble** — one fsync per batch of up to 256 requests, a
   10k-document LRU cache, automatic snapshots every 100 ops per document.
 - **CEL authorization rules** — per-collection `read`/`write` rules over
@@ -77,6 +82,28 @@ c.WaitSynced(ctx)                   // pending ops pushed, subscriptions ready
 fmt.Println(card.Values())
 ```
 
+The same edits from TypeScript (`npm install @tidepool/client`):
+
+```ts
+import { Client } from "@tidepool/client";
+
+const c = await Client.create({
+  url: "ws://127.0.0.1:7100/v1/sync",
+  token,
+  schemas: { cards: { title: "register", votes: "counter",
+                      labels: "set", description: "text" } },
+});
+c.run();                                 // connect/reconnect loop
+c.subscribe("cards", "");                // shape: this collection, every doc
+
+const card = c.doc("cards", "card1");    // offline edits queue locally
+card.set("title", "hello");
+card.inc("votes", 1);
+
+await c.waitSynced();                    // pending ops pushed, subs ready
+console.log(card.values());
+```
+
 Run a three-node cluster with replication:
 
 ```powershell
@@ -102,6 +129,7 @@ cmd/tpconform/       conformance vectors  internal/protocol/     wire messages
 cmd/tpload/          load generator (M12) internal/auth/         JWT issue/verify
 internal/crdt/       CRDT core            internal/storage/      Store: memory + Pebble
 internal/server/     sessions, committer  pkg/client/            Go client SDK
+sdk/ts/              TypeScript client    test/integration/      end-to-end tests + Go helper
 docs/adr/            architecture decisions
 deploy/              docker-compose cluster, node configs, rules example
 testdata/conformance/ generated cross-language test vectors (M10 uses these)
@@ -118,17 +146,19 @@ go build ./...
 go test ./...
 ```
 
-CI additionally runs `go test -race ./...` on Linux. Randomized tests take
-`TIDEPOOL_SEED` (printed on failure) and `TIDEPOOL_ITER`; the chaos test
-skips under `-short`. Architecture decisions live in
+CI runs `go test -race ./...` for Go and `npm test` + `tsc --noEmit` for the
+TypeScript SDK (both reproducible locally — the Go job verbatim inside
+WSL). Randomized tests take `TIDEPOOL_SEED` (printed on failure) and
+`TIDEPOOL_ITER`; the chaos test skips under `-short`. Architecture
+decisions live in
 [docs/adr](docs/adr): subscribe-in-committer (0002), multi-master
 replication without consensus (0003), and the shape-matching full scan
 (0004).
 
 ## Status
 
-Milestones M0–M9 are complete: CRDT core with cross-language conformance
-vectors, durable storage, the single-node server, the Go client SDK, CEL
-authorization rules, shape-based partial replication, and multi-node
-replication with the chaos test. Next up: the TypeScript client SDK, the
-kanban demo app, observability and benchmarks, and documentation polish.
+Milestones M0–M10 are complete: CRDT core with cross-language conformance
+vectors, durable storage, the single-node server, the Go and TypeScript
+client SDKs, CEL authorization rules, shape-based partial replication, and
+multi-node replication with the chaos test. Next up: the kanban demo app,
+observability and benchmarks, and documentation polish.
