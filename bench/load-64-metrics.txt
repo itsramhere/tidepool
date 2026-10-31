@@ -1,0 +1,46 @@
+# HELP tidepool_commit_batch_requests Requests covered by a storage commit.
+# TYPE tidepool_commit_batch_requests histogram
+tidepool_commit_batch_requests_bucket{le="1"} 1025
+tidepool_commit_batch_requests_bucket{le="2"} 3411
+tidepool_commit_batch_requests_bucket{le="4"} 4442
+tidepool_commit_batch_requests_bucket{le="8"} 4521
+tidepool_commit_batch_requests_bucket{le="16"} 4542
+tidepool_commit_batch_requests_bucket{le="32"} 4553
+tidepool_commit_batch_requests_bucket{le="64"} 4553
+tidepool_commit_batch_requests_bucket{le="128"} 4553
+tidepool_commit_batch_requests_bucket{le="256"} 4553
+tidepool_commit_batch_requests_bucket{le="+Inf"} 4553
+tidepool_commit_batch_requests_sum 10001
+tidepool_commit_batch_requests_count 4553
+# HELP tidepool_commit_seconds Storage Commit duration, including failed attempts.
+# TYPE tidepool_commit_seconds histogram
+tidepool_commit_seconds_bucket{le="0.005"} 4522
+tidepool_commit_seconds_bucket{le="0.01"} 4537
+tidepool_commit_seconds_bucket{le="0.025"} 4549
+tidepool_commit_seconds_bucket{le="0.05"} 4553
+tidepool_commit_seconds_bucket{le="0.1"} 4553
+tidepool_commit_seconds_bucket{le="0.25"} 4553
+tidepool_commit_seconds_bucket{le="0.5"} 4553
+tidepool_commit_seconds_bucket{le="1"} 4553
+tidepool_commit_seconds_bucket{le="2.5"} 4553
+tidepool_commit_seconds_bucket{le="5"} 4553
+tidepool_commit_seconds_bucket{le="10"} 4553
+tidepool_commit_seconds_bucket{le="+Inf"} 4553
+tidepool_commit_seconds_sum 6.501965700000014
+tidepool_commit_seconds_count 4553
+# HELP tidepool_ops_total Client operations by acknowledged status.
+# TYPE tidepool_ops_total counter
+tidepool_ops_total{status="dup"} 0
+tidepool_ops_total{status="invalid"} 0
+tidepool_ops_total{status="ok"} 10100
+tidepool_ops_total{status="rejected"} 0
+tidepool_ops_total{status="retry"} 0
+# HELP tidepool_sessions Open client WebSocket sessions, including handshakes.
+# TYPE tidepool_sessions gauge
+tidepool_sessions 2
+# HELP tidepool_slow_consumer_disconnects_total Client sessions disconnected for full send buffers.
+# TYPE tidepool_slow_consumer_disconnects_total counter
+tidepool_slow_consumer_disconnects_total 0
+# HELP tidepool_subscriptions Active shape subscriptions.
+# TYPE tidepool_subscriptions gauge
+tidepool_subscriptions 2

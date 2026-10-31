@@ -56,6 +56,12 @@ func Handler(hub FeedHub, store storage.Store, peerSecrets []string, log *slog.L
 			http.Error(w, "bad after", http.StatusBadRequest)
 			return
 		}
+		last, err := store.LastFeedSeq()
+		if err != nil {
+			http.Error(w, "read feed position", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("X-Tidepool-Feed-Seq", strconv.FormatUint(last, 10))
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			log.Debug("replicate accept failed", slog.Any("err", err))

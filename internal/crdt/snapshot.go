@@ -171,6 +171,7 @@ func UnmarshalSnapshot(data []byte) (*Document, error) {
 				items[i] = RGAItem{ID: si.ID, Lamport: si.Lamport, Value: si.Value, Deleted: si.Deleted}
 			}
 			st.Seq = &RGA{Text: head.Type == FieldText, Items: items}
+			st.Seq.reindex()
 		default:
 			return nil, fmt.Errorf("unmarshal snapshot: field %q has unknown type %q", name, head.Type)
 		}

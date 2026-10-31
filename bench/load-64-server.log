@@ -1,0 +1,2 @@
+2026/10/31 18:06:57 Found 0 WALs
+{"time":"2026-10-31T18:06:57.5514774+05:30","level":"INFO","msg":"tidepoold listening","addr":"127.0.0.1:7300","node":"benchmark","fsync":"always"}

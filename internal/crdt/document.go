@@ -215,6 +215,7 @@ func (st *FieldState) clone() *FieldState {
 			item.Value = append(json.RawMessage(nil), item.Value...)
 			c.Seq.Items[i] = item
 		}
+		c.Seq.reindex()
 	}
 	return c
 }

@@ -9,13 +9,14 @@ import (
 
 // Config is the server's YAML configuration, loaded via --config.
 type Config struct {
-	NodeID     string `yaml:"node_id"`
-	Listen     string `yaml:"listen"`
-	DataDir    string `yaml:"data_dir"`
-	Fsync      string `yaml:"fsync"` // "always" or "never"
-	JWTSecret  string `yaml:"jwt_secret"`
-	AdminToken string `yaml:"admin_token"`
-	RulesFile  string `yaml:"rules_file"`
+	NodeID      string `yaml:"node_id"`
+	Listen      string `yaml:"listen"`
+	DataDir     string `yaml:"data_dir"`
+	Fsync       string `yaml:"fsync"` // "always" or "never"
+	JWTSecret   string `yaml:"jwt_secret"`
+	AdminListen string `yaml:"admin_listen"`
+	AdminToken  string `yaml:"admin_token"`
+	RulesFile   string `yaml:"rules_file"`
 	// DevMode enables the unauthenticated GET /dev/token?uid= endpoint for
 	// demo tooling (PLAN.md M11). Never enable it on a network others can
 	// reach: it mints valid tokens for any uid.
@@ -54,6 +55,9 @@ func LoadConfig(path string) (*Config, error) {
 
 // validate checks required fields and applies defaults.
 func (c *Config) validate() error {
+	if c.AdminListen != "" && c.AdminToken == "" {
+		return fmt.Errorf("server config: admin_token is required with admin_listen")
+	}
 	if c.NodeID == "" {
 		return fmt.Errorf("server config: node_id is required")
 	}

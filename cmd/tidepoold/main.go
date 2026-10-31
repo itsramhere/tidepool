@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -57,11 +58,33 @@ func main() {
 	defer stopSignal()
 
 	httpSrv := &http.Server{Addr: cfg.Listen, Handler: srv.Handler()}
+	var adminSrv *http.Server
+	if cfg.AdminListen != "" {
+		listener, err := net.Listen("tcp", cfg.AdminListen)
+		if err != nil {
+			log.Error("admin listen", slog.Any("err", err))
+			srv.Stop()
+			os.Exit(1)
+		}
+		adminSrv = &http.Server{Handler: srv.AdminHandler(), ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			if err := adminSrv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("admin server", slog.Any("err", err))
+				stopSignal()
+			}
+		}()
+	}
+
 	go func() {
 		<-ctx.Done()
 		log.Info("shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		if adminSrv != nil {
+			if err := adminSrv.Shutdown(shutdownCtx); err != nil {
+				log.Error("admin shutdown", slog.Any("err", err))
+			}
+		}
 		if err := httpSrv.Shutdown(shutdownCtx); err != nil {
 			log.Error("http shutdown", slog.Any("err", err))
 		}

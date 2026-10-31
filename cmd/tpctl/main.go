@@ -17,6 +17,11 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "doc":
+		if err := docCmd(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	case "token":
 		tokenCmd(os.Args[2:])
 	default:
@@ -28,6 +33,7 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: tpctl <command> [flags]")
+	fmt.Fprintln(os.Stderr, "  doc get [--url http://127.0.0.1:7101] [--token ...] cards/c1")
 	fmt.Fprintln(os.Stderr, "  token   issue a development JWT (--secret --uid --ttl)")
 }
 

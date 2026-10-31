@@ -38,6 +38,7 @@ type session struct {
 	writeCh    chan []byte
 	writerDone chan struct{}
 	closeOnce  sync.Once
+	slowOnce   sync.Once
 	done       chan struct{}
 }
 
@@ -70,11 +71,17 @@ func itoa(n uint64) string {
 // It reports whether the frame was accepted.
 func (s *session) enqueue(frame []byte) bool {
 	select {
+	case <-s.done:
+		return false
+	default:
+	}
+	select {
 	case s.writeCh <- frame:
 		return true
 	default:
 		// The buffer is full, so an err frame could not be delivered either;
 		// closing the connection is the only signal we can still send.
+		s.slowOnce.Do(func() { s.srv.comm.metrics.SlowConsumers.Inc() })
 		s.srv.log.Debug("slow consumer", slog.String("session", s.id))
 		s.closeConn()
 		return false

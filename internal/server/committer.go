@@ -3,10 +3,12 @@ package server
 import (
 	"errors"
 	"fmt"
+	"github.com/itsramhere/tidepool/internal/metrics"
 	"log/slog"
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/cel-go/cel"
 	"github.com/hashicorp/golang-lru/v2"
@@ -93,7 +95,8 @@ type broadcastEntry struct {
 // committer serializes all document and store access (PLAN.md golden rule
 // 10: the single-writer design needs no locks on docs or the doc cache).
 type committer struct {
-	reqs chan request
+	metrics *metrics.Metrics
+	reqs    chan request
 	// reqs is never closed; shutdown is signaled via stopped so that dying
 	// sessions can always hand over their cleanup request without the risk
 	// of a send on a closed channel.
@@ -135,6 +138,7 @@ func newCommitter(cfg *Config, schemas *schema.Config, store storage.Store, log 
 		return nil, fmt.Errorf("create doc cache: %w", err)
 	}
 	return &committer{
+		metrics:     metrics.New(),
 		reqs:        make(chan request),
 		stopped:     make(chan struct{}),
 		done:        make(chan struct{}),
@@ -189,13 +193,16 @@ drain:
 
 	batch := &storage.Batch{Sync: c.cfg.FsyncAlways()}
 	var (
-		pushes     []*pushReq
-		broadcasts []broadcastEntry
-		touched    = make(map[crdt.DocKey]struct{})
-		sessions   = make(map[*session]struct{})
+		inspections []*inspectReq
+		pushes      []*pushReq
+		broadcasts  []broadcastEntry
+		touched     = make(map[crdt.DocKey]struct{})
+		sessions    = make(map[*session]struct{})
 	)
 	for _, req := range group {
 		switch r := req.(type) {
+		case *inspectReq:
+			inspections = append(inspections, r)
 		case *pushReq:
 			pushes = append(pushes, r)
 			sessions[r.sess] = struct{}{}
@@ -206,16 +213,21 @@ drain:
 			sessions[r.sess] = struct{}{}
 			c.stageSubscribe(r)
 		case *unsubscribeReq:
-			c.subs.remove(r.sess, r.id)
+			if c.subs.remove(r.sess, r.id) {
+				c.metrics.Subscriptions.Dec()
+			}
 		case *removeSessionReq:
-			c.subs.removeAll(r.sess)
+			c.metrics.Subscriptions.Sub(float64(c.subs.removeAll(r.sess)))
 		case *replicatedOpsReq:
 			c.handleReplicate(r)
 		}
 	}
 
 	if len(batch.Ops) > 0 || len(batch.Metas) > 0 || len(batch.Snapshots) > 0 || len(batch.Meta) > 0 {
-		if err := c.store.Commit(batch); err != nil {
+		if err := c.commit(batch, len(group)); err != nil {
+			for _, r := range inspections {
+				r.done <- inspectResult{err: err}
+			}
 			c.log.Error("commit failed, dropping cache entries",
 				slog.Any("err", err), slog.Int("group_size", len(group)), slog.Int("ops", len(batch.Ops)))
 			for key := range touched {
@@ -230,9 +242,16 @@ drain:
 		c.notifyFeedSubs(batch.Ops)
 	}
 
+	for _, r := range inspections {
+		r.done <- c.inspectCommitted(r)
+	}
+
 	// Acks first, then the broadcast — a subscribed author sees its ack
 	// before the echo of its own op.
 	for _, r := range pushes {
+		for _, result := range r.results {
+			c.metrics.Ops.WithLabelValues(result.Status).Inc()
+		}
 		r.sess.sendMessage(protocol.NewAck(r.req, r.results))
 		r.results = nil
 	}
@@ -528,7 +547,11 @@ func (c *committer) stageSubscribe(r *subscribeReq) {
 		}
 	}
 	r.sess.sendMessage(protocol.NewReady(r.id))
+	if c.subs.remove(r.sess, r.id) {
+		c.metrics.Subscriptions.Dec()
+	}
 	c.subs.add(sub)
+	c.metrics.Subscriptions.Inc()
 	return
 }
 
@@ -712,7 +735,7 @@ func (c *committer) handleReplicate(r *replicatedOpsReq) {
 		batch.Meta = make(map[string][]byte)
 	}
 	batch.Meta["p/"+r.peer] = replication.CursorBytes(r.lastFeedSeq)
-	if err := c.store.Commit(batch); err != nil {
+	if err := c.commit(batch, 1); err != nil {
 		c.log.Error("replication commit failed", slog.String("peer", r.peer), slog.Any("err", err))
 		for key := range touched {
 			c.lru.Remove(key)
@@ -760,4 +783,13 @@ func (c *committer) matches(sub *subscription, readProg cel.Program, hasRead boo
 		}
 	}
 	return true
+}
+
+// commit instruments storage attempts only; acknowledgments are counted after success.
+func (c *committer) commit(batch *storage.Batch, requests int) error {
+	start := time.Now()
+	err := c.store.Commit(batch)
+	c.metrics.CommitSeconds.Observe(time.Since(start).Seconds())
+	c.metrics.BatchRequests.Observe(float64(requests))
+	return err
 }

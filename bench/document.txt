@@ -1,0 +1,21 @@
+goos: windows
+
+goarch: amd64
+
+pkg: github.com/itsramhere/tidepool/internal/crdt
+
+cpu: AMD Ryzen 7 7445HS w/ Radeon 740M Graphics
+
+BenchmarkDocumentApply/register-12         	     200	      2557 ns/op	     192 B/op	       4 allocs/op
+
+BenchmarkDocumentApply/counter-12          	     200	      1567 ns/op	      16 B/op	       1 allocs/op
+
+BenchmarkDocumentApply/set-12              	     200	      3039 ns/op	     463 B/op	       7 allocs/op
+
+BenchmarkDocumentApply/list-12             	     200	      1756 ns/op	     507 B/op	       5 allocs/op
+
+BenchmarkDocumentApply/text-12             	     200	      1860 ns/op	     507 B/op	       5 allocs/op
+
+PASS
+
+ok  	github.com/itsramhere/tidepool/internal/crdt	1.134s

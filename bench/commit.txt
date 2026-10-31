@@ -1,0 +1,47 @@
+2026/10/31 18:00:37 Found 0 WALs
+
+goos: windows
+
+goarch: amd64
+
+pkg: github.com/itsramhere/tidepool/internal/server
+
+cpu: AMD Ryzen 7 7445HS w/ Radeon 740M Graphics
+
+BenchmarkCommit/sync=false/batch=1-12         	2026/10/31 18:00:37 Found 0 WALs
+
+     100	     13911 ns/op	     71948 ops/s	    3148 B/op	      25 allocs/op
+
+2026/10/31 18:00:37 Found 0 WALs
+
+BenchmarkCommit/sync=false/batch=16-12        	2026/10/31 18:00:37 Found 0 WALs
+
+     100	    233434 ns/op	     68548 ops/s	   64779 B/op	     349 allocs/op
+
+2026/10/31 18:00:37 Found 0 WALs
+
+BenchmarkCommit/sync=false/batch=256-12       	2026/10/31 18:00:37 Found 0 WALs
+
+     100	   9077640 ns/op	     28201 ops/s	 2409509 B/op	    6661 allocs/op
+
+2026/10/31 18:00:38 Found 0 WALs
+
+BenchmarkCommit/sync=true/batch=1-12          	2026/10/31 18:00:38 Found 0 WALs
+
+     100	   1218403 ns/op	       820.8 ops/s	    3422 B/op	      25 allocs/op
+
+2026/10/31 18:00:38 Found 0 WALs
+
+BenchmarkCommit/sync=true/batch=16-12         	2026/10/31 18:00:38 Found 0 WALs
+
+     100	   2123110 ns/op	      7536 ops/s	   65420 B/op	     350 allocs/op
+
+2026/10/31 18:00:39 Found 0 WALs
+
+BenchmarkCommit/sync=true/batch=256-12        	2026/10/31 18:00:39 Found 0 WALs
+
+     100	   7947758 ns/op	     32210 ops/s	 2416281 B/op	    6664 allocs/op
+
+PASS
+
+ok  	github.com/itsramhere/tidepool/internal/server	2.824s

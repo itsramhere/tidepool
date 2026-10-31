@@ -1,0 +1,59 @@
+goos: windows
+
+goarch: amd64
+
+pkg: github.com/itsramhere/tidepool/internal/crdt
+
+cpu: AMD Ryzen 7 7445HS w/ Radeon 740M Graphics
+
+BenchmarkRGAInsertAppend/1000-12         	     200	      4606 ns/op	     203 B/op	       5 allocs/op
+
+--- BENCH: BenchmarkRGAInsertAppend/1000-12
+
+    bench_test.go:16: seed=12345
+
+    bench_test.go:16: seed=12345
+
+BenchmarkRGAInsertAppend/10000-12        	     200	     26936 ns/op	     203 B/op	       5 allocs/op
+
+--- BENCH: BenchmarkRGAInsertAppend/10000-12
+
+    bench_test.go:16: seed=12345
+
+    bench_test.go:16: seed=12345
+
+BenchmarkRGAInsertAppend/100000-12       	     200	    272388 ns/op	     203 B/op	       5 allocs/op
+
+--- BENCH: BenchmarkRGAInsertAppend/100000-12
+
+    bench_test.go:16: seed=12345
+
+    bench_test.go:16: seed=12345
+
+BenchmarkRGAInsertRandom/1000-12         	     200	      3454 ns/op	     203 B/op	       5 allocs/op
+
+--- BENCH: BenchmarkRGAInsertRandom/1000-12
+
+    bench_test.go:16: seed=12345
+
+    bench_test.go:16: seed=12345
+
+BenchmarkRGAInsertRandom/10000-12        	     200	     19354 ns/op	     203 B/op	       5 allocs/op
+
+--- BENCH: BenchmarkRGAInsertRandom/10000-12
+
+    bench_test.go:16: seed=12345
+
+    bench_test.go:16: seed=12345
+
+BenchmarkRGAInsertRandom/100000-12       	     200	    479148 ns/op	     203 B/op	       5 allocs/op
+
+--- BENCH: BenchmarkRGAInsertRandom/100000-12
+
+    bench_test.go:16: seed=12345
+
+    bench_test.go:16: seed=12345
+
+PASS
+
+ok  	github.com/itsramhere/tidepool/internal/crdt	1.208s

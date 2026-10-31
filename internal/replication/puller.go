@@ -5,8 +5,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/itsramhere/tidepool/internal/metrics"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,11 +39,13 @@ type CommitterSink interface {
 // committer. Cursors live in the store (p/<peerID>), committed atomically
 // with the ops they cover.
 type Puller struct {
-	peers  []PeerConfig
-	store  storage.Store
-	comm   CommitterSink
-	client *http.Client
-	log    *slog.Logger
+	// Metrics is set before Run; nil disables instrumentation.
+	Metrics *metrics.Metrics
+	peers   []PeerConfig
+	store   storage.Store
+	comm    CommitterSink
+	client  *http.Client
+	log     *slog.Logger
 }
 
 // PeerConfig describes one replication peer: its ID (cursor key) and origin
@@ -93,7 +97,7 @@ func (p *Puller) pullOnce(ctx context.Context, peer PeerConfig, cursor *uint64) 
 	wsURL := wsFeedURL(peer.URL, *cursor)
 	dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(dctx, wsURL, &websocket.DialOptions{
+	conn, response, err := websocket.Dial(dctx, wsURL, &websocket.DialOptions{
 		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + peer.Secret}},
 		HTTPClient: p.client,
 	})
@@ -103,6 +107,16 @@ func (p *Puller) pullOnce(ctx context.Context, peer PeerConfig, cursor *uint64) 
 	defer conn.CloseNow()
 	conn.SetReadLimit(1 << 20) // feed frames mirror op sizes
 
+	high, parseErr := strconv.ParseUint(response.Header.Get("X-Tidepool-Feed-Seq"), 10, 64)
+	if parseErr != nil {
+		high = *cursor
+	}
+	reportLag := func() {
+		if p.Metrics != nil {
+			p.Metrics.ReplicationLag.WithLabelValues(peer.ID).Set(float64(high - min(high, *cursor)))
+		}
+	}
+	reportLag()
 	applied := 0
 	var batch []storage.StoredOp
 	last := *cursor
@@ -116,6 +130,7 @@ func (p *Puller) pullOnce(ctx context.Context, peer PeerConfig, cursor *uint64) 
 			return fmt.Errorf("replicate %d ops to committer: %w", len(batch), err)
 		}
 		*cursor = last
+		reportLag()
 		applied += len(batch)
 		batch = batch[:0]
 		return nil
@@ -148,6 +163,8 @@ func (p *Puller) pullOnce(ctx context.Context, peer PeerConfig, cursor *uint64) 
 		}
 		batch = append(batch, frame.Op)
 		last = frame.Op.FeedSeq
+		high = max(high, last)
+		reportLag()
 		if len(batch) >= pullBatchSize {
 			if err := flush(); err != nil {
 				return applied, err

@@ -1,0 +1,24 @@
+{
+  "clients": 16,
+  "docs": 100,
+  "target_ops_per_second": 500,
+  "seconds": 10.0002776,
+  "drain_seconds": 0.0203803,
+  "offered": 5000,
+  "sent": 5000,
+  "acked": 5000,
+  "errors": 0,
+  "ops_per_second": 498.96923434538166,
+  "ack_latency": {
+    "samples": 5000,
+    "p50_ms": 1.0673735259130044,
+    "p95_ms": 2.1207585071259802,
+    "p99_ms": 35.78997310724737
+  },
+  "fanout_latency": {
+    "samples": 75000,
+    "p50_ms": 1.0888277337838557,
+    "p95_ms": 2.185019610650404,
+    "p99_ms": 36.87444508237006
+  }
+}

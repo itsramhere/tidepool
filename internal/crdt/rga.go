@@ -24,6 +24,8 @@ type RGAItem struct {
 type RGA struct {
 	Items []RGAItem
 	Text  bool
+	// positions is derived state, maintained only by successful apply operations.
+	positions map[OpID]int
 }
 
 // check validates an ins or del op against the sequence and writes nothing.
@@ -78,6 +80,13 @@ func (g *RGA) check(op Op, vv map[ActorID]uint64) error {
 func (g *RGA) apply(op Op) {
 	switch op.Kind {
 	case KindIns:
+		// Build on append, where the index removes repeated full scans. For
+		// large middle inserts, discard it rather than rewriting thousands of
+		// map entries; a later append rebuilds it once.
+		appendOnly := len(g.Items) == 0 || (op.Ref != nil && *op.Ref == g.Items[len(g.Items)-1].ID)
+		if g.positions == nil && appendOnly {
+			g.reindex()
+		}
 		i := 0
 		if op.Ref != nil {
 			i = g.indexOf(*op.Ref) + 1
@@ -86,6 +95,14 @@ func (g *RGA) apply(op Op) {
 			i++
 		}
 		g.Items = slices.Insert(g.Items, i, RGAItem{ID: op.ID, Lamport: op.Lamport, Value: op.Value})
+		if len(g.Items)-i > 64 {
+			g.positions = nil
+		}
+		if g.positions != nil {
+			for j := i; j < len(g.Items); j++ {
+				g.positions[g.Items[j].ID] = j
+			}
+		}
 	case KindDel:
 		if op.Ref == nil {
 			return
@@ -106,9 +123,15 @@ func rgaItemGreater(item RGAItem, op Op) bool {
 }
 
 // indexOf returns the document-order position of the item with the given ID,
-// or -1 if absent. Linear scan in v1; M12 adds an index map if benchmarks
-// demand it.
+// or -1 if absent. Snapshot/clone constructors rebuild the derived index.
+// Unindexed literal RGAs use a read-only scan so validation never mutates state.
 func (g *RGA) indexOf(id OpID) int {
+	if g.positions != nil {
+		if i, ok := g.positions[id]; ok {
+			return i
+		}
+		return -1
+	}
 	for i := range g.Items {
 		if g.Items[i].ID == id {
 			return i
@@ -157,4 +180,11 @@ func (g *RGA) Materialize() any {
 		}
 	}
 	return out
+}
+
+func (g *RGA) reindex() {
+	g.positions = make(map[OpID]int, len(g.Items))
+	for i, item := range g.Items {
+		g.positions[item.ID] = i
+	}
 }

@@ -1,0 +1,9 @@
+node_id: benchmark
+listen: "127.0.0.1:7300"
+admin_listen: "127.0.0.1:7301"
+admin_token: benchmark-admin-local
+data_dir: data/benchmark
+fsync: always
+jwt_secret: benchmark-secret-local
+rules_file: bench/rules.yaml
+session_send_buffer: 4096

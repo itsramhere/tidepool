@@ -1,0 +1,5 @@
+collections:
+  load:
+    fields:
+      run: register
+      sentAt: register

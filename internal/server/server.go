@@ -56,6 +56,10 @@ func New(cfg *Config, schemas *schema.Config, store storage.Store, log *slog.Log
 		}
 		s.replicate = replication.Handler(comm, store, secrets, log)
 		puller := replication.NewPuller(peers, store, comm, log)
+		puller.Metrics = comm.metrics
+		for _, peer := range peers {
+			comm.metrics.ReplicationLag.WithLabelValues(peer.ID).Set(0)
+		}
 		s.pullers.Add(1)
 		go func() {
 			defer s.pullers.Done()
@@ -70,6 +74,7 @@ func New(cfg *Config, schemas *schema.Config, store storage.Store, log *slog.Log
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/sync", s.handleSync)
+	mux.Handle("GET /metrics", s.comm.metrics.Handler())
 	if s.replicate != nil {
 		mux.Handle("GET /v1/replicate", s.replicate)
 	}
@@ -118,6 +123,8 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 		s.log.Debug("websocket accept failed", slog.Any("err", err))
 		return
 	}
+	s.comm.metrics.Sessions.Inc()
+	defer s.comm.metrics.Sessions.Dec()
 	sess := newSession(s, conn)
 	go sess.writeLoop()
 	sess.readLoop()
