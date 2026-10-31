@@ -2,8 +2,8 @@
 // identity, confirmed snapshots, pending ops) across restarts. Mirrors the
 // Go SDK's LocalStore; persistence is asynchronous here because
 // IndexedDBStorage is.
-import type { ActorID, Op } from "./crdt/op";
-import type { SnapshotObject } from "./crdt/snapshot";
+import type { ActorID, Op } from "./crdt/op.js";
+import type { SnapshotObject } from "./crdt/snapshot.js";
 
 export interface PersistedDoc {
   coll: string;

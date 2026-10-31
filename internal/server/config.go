@@ -16,6 +16,10 @@ type Config struct {
 	JWTSecret  string `yaml:"jwt_secret"`
 	AdminToken string `yaml:"admin_token"`
 	RulesFile  string `yaml:"rules_file"`
+	// DevMode enables the unauthenticated GET /dev/token?uid= endpoint for
+	// demo tooling (PLAN.md M11). Never enable it on a network others can
+	// reach: it mints valid tokens for any uid.
+	DevMode bool `yaml:"dev_mode"`
 
 	MaxOpsPerPush     int          `yaml:"max_ops_per_push"`
 	SessionSendBuffer int          `yaml:"session_send_buffer"`

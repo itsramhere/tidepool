@@ -1,5 +1,5 @@
 // Scalar values (PLAN.md §4.2), mirroring internal/crdt/value.go.
-import { errInvalid } from "./errors";
+import { errInvalid } from "./errors.js";
 
 /** MaxScalarBytes is the largest JSON size accepted for one scalar value. */
 export const MAX_SCALAR_BYTES = 64 << 10;

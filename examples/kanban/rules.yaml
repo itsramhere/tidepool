@@ -1,0 +1,12 @@
+# Demo schema: no authorization rules — everything is allowed. Cards carry
+# their board id so board subscriptions can shape on doc.board.
+collections:
+  cards:
+    fields:
+      title: register
+      status: register
+      board: register
+      votes: counter
+      labels: set
+      checklist: list
+      description: text

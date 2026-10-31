@@ -1,9 +1,9 @@
 // RGA sequence CRDT behind list and text fields (PLAN.md §4.5), mirroring
 // internal/crdt/rga.go. Items are never physically removed.
-import type { Op, OpID } from "./op";
-import { errInvalid, errMissingDeps } from "./errors";
-import { isSingleCodePoint, parseScalar } from "./value";
-import type { FieldType } from "./schema";
+import type { Op, OpID } from "./op.js";
+import { errInvalid, errMissingDeps } from "./errors.js";
+import { isSingleCodePoint, parseScalar } from "./value.js";
+import type { FieldType } from "./schema.js";
 
 export interface RGAItem {
   id: OpID;

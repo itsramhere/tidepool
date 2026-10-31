@@ -1,14 +1,14 @@
 // Snapshot serialization (PLAN.md §4.6), mirroring internal/crdt/snapshot.go.
 // marshalSnapshot returns the JSON-shaped object (callers canonicalStringify
 // or JSON.stringify it); unmarshalSnapshot rebuilds the document.
-import { validateKey } from "./op";
-import type { DocKey, OpID } from "./op";
-import { Document, newFieldState, type FieldState } from "./document";
-import { Register } from "./register";
-import { Counter } from "./counter";
-import { ORSet } from "./orset";
-import { RGA } from "./rga";
-import type { FieldType } from "./schema";
+import { validateKey } from "./op.js";
+import type { DocKey, OpID } from "./op.js";
+import { Document, newFieldState, type FieldState } from "./document.js";
+import { Register } from "./register.js";
+import { Counter } from "./counter.js";
+import { ORSet } from "./orset.js";
+import { RGA } from "./rga.js";
+import type { FieldType } from "./schema.js";
 
 interface SnapRegister {
   type: FieldType;

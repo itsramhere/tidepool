@@ -1,7 +1,7 @@
 // Add-wins observed-remove set (PLAN.md §4.5), mirroring internal/crdt/orset.go.
-import type { Op, OpID } from "./op";
-import { errInvalid } from "./errors";
-import { parseScalar } from "./value";
+import type { Op, OpID } from "./op.js";
+import { errInvalid } from "./errors.js";
+import { parseScalar } from "./value.js";
 
 export class ORSet {
   /** element → live add tags. */

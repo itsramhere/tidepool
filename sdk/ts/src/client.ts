@@ -3,15 +3,15 @@
 // shape subscriptions reconciled on every reconnect, jittered exponential
 // backoff, and non-blocking sends (a full send queue tears the connection
 // down; Run reconnects).
-import { canonicalStringify } from "./canonical";
-import { CrdtError } from "./crdt/errors";
-import { Editor } from "./crdt/editor";
-import { Document, newFieldState, type FieldState } from "./crdt/document";
-import { newActorID, validateActor, validateKey, type ActorID, type DocKey, type Op, type OpID } from "./crdt/op";
-import type { Schema } from "./crdt/schema";
-import { marshalSnapshot, unmarshalSnapshot, type SnapshotObject } from "./crdt/snapshot";
-import type { ClientStorage, PersistedState } from "./storage";
-import { MemoryStorage } from "./storage";
+import { canonicalStringify } from "./canonical.js";
+import { CrdtError } from "./crdt/errors.js";
+import { Editor } from "./crdt/editor.js";
+import { Document, newFieldState, type FieldState } from "./crdt/document.js";
+import { newActorID, validateActor, validateKey, type ActorID, type DocKey, type Op, type OpID } from "./crdt/op.js";
+import type { Schema } from "./crdt/schema.js";
+import { marshalSnapshot, unmarshalSnapshot, type SnapshotObject } from "./crdt/snapshot.js";
+import type { ClientStorage, PersistedState } from "./storage.js";
+import { MemoryStorage } from "./storage.js";
 
 const baseBackoffMs = 200;
 const maxBackoffMs = 10_000;
@@ -137,6 +137,7 @@ export class Client {
   private sendQueue: string[] = [];
   private stopped = false;
   private runStarted = false;
+  private runGeneration = 0;
   private saveChain: Promise<void> = Promise.resolve();
   private waiters: Array<() => void> = [];
   private changeListeners: Array<(key: DocKey) => void> = [];
@@ -185,20 +186,29 @@ export class Client {
     return c;
   }
 
-  /** run starts the connect/reconnect loop; it returns immediately. */
+  /**
+   * run starts the connect/reconnect loop; it returns immediately. It may
+   * be called again after stop() — the demo's offline toggle does exactly
+   * that.
+   */
   run(): void {
     if (this.runStarted) {
       throw new Error("client: run is already running");
     }
+    this.stopped = false;
     this.runStarted = true;
-    void this.runLoop();
+    void this.runLoop(++this.runGeneration);
   }
 
   /** stop tears the connection down and ends the run loop. */
   stop(): void {
     this.stopped = true;
-    this.alive = false;
+    this.runGeneration++;
+    this.runStarted = false;
     this.closeConn();
+    for (const sub of this.subs.values()) {
+      sub.ready = false;
+    }
     this.notify();
   }
 
@@ -219,6 +229,44 @@ export class Client {
     return sub;
   }
 
+  /**
+   * unsubscribe stops one subscription: the server stops delivering its
+   * shape and the client drops it from status/waitSynced accounting.
+   */
+  unsubscribe(sub: Subscription): void {
+    if (!this.subs.has(sub.id)) {
+      return;
+    }
+    this.send({ t: "unsub", id: sub.id });
+    this.subs.delete(sub.id);
+    this.subOrder = this.subOrder.filter((id) => id !== sub.id);
+    this.notify();
+  }
+
+  /**
+   * listDocs returns the doc ids the client currently holds for a
+   * collection — every doc that arrived via snapshot or op, sorted.
+   */
+  listDocs(coll: string): string[] {
+    const out: string[] = [];
+    for (const ds of this.docs.values()) {
+      if (ds.key.coll === coll) {
+        out.push(ds.key.doc);
+      }
+    }
+    return out.sort();
+  }
+
+  /** pendingCount reports ops created locally but not yet confirmed. */
+  get pendingCount(): number {
+    return this.countPending();
+  }
+
+  /** running reports whether the connect/reconnect loop is active. */
+  get running(): boolean {
+    return this.runStarted && !this.stopped;
+  }
+
   /** doc returns a handle for one document, creating it when unknown. */
   doc(coll: string, id: string): DocHandle {
     const key = { coll, doc: id };
@@ -226,19 +274,31 @@ export class Client {
     return new DocHandle(this, key);
   }
 
-  /** onChange registers a callback fired after any visible document change. */
-  onChange(cb: (key: DocKey) => void): void {
+  /** onChange registers a callback fired after any visible document change;
+   * the returned function removes it. */
+  onChange(cb: (key: DocKey) => void): () => void {
     this.changeListeners.push(cb);
+    return () => {
+      this.changeListeners = this.changeListeners.filter((x) => x !== cb);
+    };
   }
 
-  /** onStatus registers a callback fired on every status transition. */
-  onStatus(cb: (s: ClientStatus) => void): void {
+  /** onStatus registers a callback fired on every status transition; the
+   * returned function removes it. */
+  onStatus(cb: (s: ClientStatus) => void): () => void {
     this.statusListeners.push(cb);
+    return () => {
+      this.statusListeners = this.statusListeners.filter((x) => x !== cb);
+    };
   }
 
-  /** onError registers a callback for rejected/invalid ops and fatal errors. */
-  onError(cb: (e: Error | OpError) => void): void {
+  /** onError registers a callback for rejected/invalid ops and fatal
+   * errors; the returned function removes it. */
+  onError(cb: (e: Error | OpError) => void): () => void {
     this.errorListeners.push(cb);
+    return () => {
+      this.errorListeners = this.errorListeners.filter((x) => x !== cb);
+    };
   }
 
   /** status reflects connection and sync progress. */
@@ -246,7 +306,7 @@ export class Client {
     if (this.connState !== "connected") {
       return this.connState === "connecting" ? "connecting" : "offline";
     }
-    if (this.pendingCount() === 0 && this.allSubsReady()) {
+    if (this.countPending() === 0 && this.allSubsReady()) {
       return "synced";
     }
     return "syncing";
@@ -288,7 +348,7 @@ export class Client {
         }
       }
     }
-    return this.pendingCount() === 0;
+    return this.countPending() === 0;
   }
 
   private allSubsReady(): boolean {
@@ -301,7 +361,7 @@ export class Client {
     return true;
   }
 
-  private pendingCount(): number {
+  private countPending(): number {
     let n = 0;
     for (const ds of this.docs.values()) {
       n += ds.pending.length;
@@ -309,12 +369,12 @@ export class Client {
     return n;
   }
 
-  private async runLoop(): Promise<void> {
+  private async runLoop(generation: number): Promise<void> {
     let attempt = 0;
-    while (!this.stopped) {
+    while (!this.stopped && generation === this.runGeneration) {
       this.setConnState("connecting");
       const err = await this.connectAndServe();
-      if (this.stopped) {
+      if (this.stopped || generation !== this.runGeneration) {
         break;
       }
       if (err) {
@@ -325,16 +385,19 @@ export class Client {
       const delay = backoffDelay(attempt);
       await sleep(delay);
     }
-    this.setConnState("offline");
+    if (generation === this.runGeneration) this.setConnState("offline");
   }
 
   private connectAndServe(): Promise<Error | null> {
     return new Promise((resolve) => {
       let settled = false;
+      let ws: WebSocket | undefined;
+      let welcomed = false;
       const done = (err: Error | null) => {
         clearTimeout(watchdog);
         if (!settled) {
           settled = true;
+          if (ws) this.teardownConn(ws);
           resolve(err);
         }
       };
@@ -343,7 +406,6 @@ export class Client {
           done(new Error("client: welcome timed out"));
         }
       }, handshakeTimeoutMs);
-      let ws: WebSocket;
       try {
         ws = new WebSocket(this.opts.url);
       } catch (e) {
@@ -353,12 +415,14 @@ export class Client {
       this.ws = ws;
       this.sendQueue = [];
       this.handshakeDeadline = Date.now() + handshakeTimeoutMs;
-      let welcomed = false;
+      const connection = ws;
 
       ws.onopen = () => {
+        if (this.stopped || this.ws !== connection) return;
         this.sendRaw({ t: "hello", v: protocolVersion, token: this.opts.token, actor: this.actor });
       };
       ws.onmessage = (ev) => {
+        if (this.stopped || this.ws !== connection) return;
         try {
           const frame = JSON.parse(String(ev.data)) as Record<string, unknown>;
           if (!welcomed) {
@@ -386,7 +450,7 @@ export class Client {
         done(new Error("client: connection error"));
       };
       ws.onclose = () => {
-        this.teardownConn(ws);
+        this.teardownConn(connection);
         done(welcomed ? new Error("client: connection closed") : new Error("client: connection closed before welcome"));
       };
 
@@ -417,13 +481,9 @@ export class Client {
   private closeConn(): void {
     const ws = this.ws;
     if (ws) {
-      this.ws = null;
-      try {
-        ws.close();
-      } catch {
-        // already closed
-      }
+      this.teardownConn(ws);
     }
+    this.setConnState("offline");
   }
 
   private setConnState(s: "offline" | "connecting" | "connected"): void {
@@ -857,7 +917,7 @@ export class Client {
       w();
     }
     // Status may have moved without a connection event.
-    this.setConnState(this.connState === "connected" ? "connected" : this.connState);
+    for (const cb of this.statusListeners) cb(this.status);
   }
 
   private fireChange(key: DocKey): void {
@@ -917,8 +977,8 @@ export { canonicalStringify };
 export type { Schema, SnapshotObject, PersistedState };
 export { marshalSnapshot, unmarshalSnapshot };
 export { Document, Editor, newActorID, validateActor, validateKey };
-export { MemoryStorage, IndexedDBStorage } from "./storage";
-export type { ClientStorage } from "./storage";
-export { isCrdtKind } from "./crdt/errors";
-export { opIDLess, opLess } from "./crdt/op";
+export { MemoryStorage, IndexedDBStorage } from "./storage.js";
+export type { ClientStorage } from "./storage.js";
+export { isCrdtKind } from "./crdt/errors.js";
+export { opIDLess, opLess } from "./crdt/op.js";
 

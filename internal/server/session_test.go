@@ -2,8 +2,10 @@ package server
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 
+	"github.com/itsramhere/tidepool/internal/auth"
 	"github.com/itsramhere/tidepool/internal/crdt"
 	"github.com/itsramhere/tidepool/internal/protocol"
 )
@@ -138,4 +140,59 @@ func TestPushTooManyOps(t *testing.T) {
 		t.Errorf("err code = %q, want too_many_ops", e.Code)
 	}
 	recvClosed(t, conn)
+}
+
+// TestDevTokenEndpoint: /dev/token issues a working token only when
+// dev_mode is enabled (PLAN.md M11 demo tooling).
+func TestDevTokenEndpoint(t *testing.T) {
+	ts, _ := newTestServer(t, func(cfg *Config) { cfg.DevMode = true })
+	res, err := http.Get(ts.URL + "/dev/token?uid=demo-user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("dev token status = %d, want 200", res.StatusCode)
+	}
+	var body struct {
+		Token string `json:"token"`
+		UID   string `json:"uid"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.UID != "demo-user" || body.Token == "" {
+		t.Fatalf("dev token body = %+v", body)
+	}
+	if _, _, err := auth.Verify(testJWTSecret, body.Token); err != nil {
+		t.Fatalf("issued token does not verify: %v", err)
+	}
+
+	// The endpoint must work end-to-end: a session with the token handshakes.
+	conn := dial(t, ts)
+	send(t, conn, protocol.NewHello(1, body.Token, crdt.ActorID(bobActor)))
+	recvType(t, conn, "welcome")
+
+	// Missing uid is rejected.
+	res2, err := http.Get(ts.URL + "/dev/token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res2.Body.Close()
+	if res2.StatusCode != http.StatusBadRequest {
+		t.Fatalf("dev token without uid = %d, want 400", res2.StatusCode)
+	}
+}
+
+// TestDevTokenDisabledByDefault: without dev_mode the endpoint must not exist.
+func TestDevTokenDisabledByDefault(t *testing.T) {
+	ts, _ := newTestServer(t, nil)
+	res, err := http.Get(ts.URL + "/dev/token?uid=demo-user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("dev token without dev_mode = %d, want 404", res.StatusCode)
+	}
 }

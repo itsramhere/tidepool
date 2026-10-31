@@ -53,7 +53,7 @@ beforeAll(async () => {
   workDir = mkdtempSync(join(tmpdir(), "tidepool-e2e-"));
   writeFileSync(
     join(workDir, "rules.yaml"),
-    `collections:\n  cards:\n    fields:\n      title: register\n      status: register\n      votes: counter\n      labels: set\n      checklist: list\n      description: text\n`,
+    `collections:\n  cards:\n    fields:\n      title: register\n      status: register\n      board: register\n      votes: counter\n      labels: set\n      checklist: list\n      description: text\n`,
   );
   writeFileSync(
     join(workDir, "node.yaml"),
@@ -141,6 +141,68 @@ function waitFor(repr: () => string, want: string, timeoutMs = 20_000): Promise<
 }
 
 describe("TypeScript client against a real server", () => {
+  it("moves cards between board shapes and reconciles after switching boards", async () => {
+    const options = { url, token, schemas: { cards: { board: "register", title: "register" } } } as const;
+    const author = await Client.create(options);
+    const reader = await Client.create(options);
+    try {
+      author.subscribe("cards", "");
+      let sub = reader.subscribe("cards", 'doc.board == "b1"');
+      author.run(); reader.run();
+      await author.waitSynced(); await reader.waitSynced();
+      const card = author.doc("cards", "shape-demo");
+      card.set("board", "b1"); card.set("title", "Move me");
+      await author.waitSynced();
+      await waitFor(() => reader.listDocs("cards").includes("shape-demo"), true);
+      card.set("board", "b2");
+      await author.waitSynced();
+      await waitFor(() => reader.listDocs("cards").includes("shape-demo"), false);
+      reader.unsubscribe(sub);
+      sub = reader.subscribe("cards", 'doc.board == "b2"');
+      await reader.waitSynced();
+      expect(reader.doc("cards", "shape-demo").values()).toEqual({ board: "b2", title: "Move me" });
+      reader.stop();
+      card.set("board", "b1");
+      await author.waitSynced();
+      reader.run();
+      await reader.waitSynced();
+      expect(reader.listDocs("cards")).not.toContain("shape-demo");
+      reader.unsubscribe(sub);
+      reader.subscribe("cards", 'doc.board == "b1"');
+      await reader.waitSynced();
+      expect(reader.doc("cards", "shape-demo").values().board).toBe("b1");
+    } finally { author.stop(); reader.stop(); }
+  }, 30_000);
+
+  it("stops immediately, queues offline edits, and survives rapid restarts", async () => {
+    const c = await Client.create({ url, token, schemas: { cards: { votes: "counter" } } });
+    c.subscribe("cards", "");
+    const statuses: string[] = [];
+    c.onStatus((status) => statuses.push(status));
+    try {
+      c.run();
+      await c.waitSynced();
+      c.stop();
+      expect(c.status).toBe("offline");
+      c.doc("cards", "offline-demo").inc("votes", 2);
+      expect(c.pendingCount).toBe(1);
+      c.run();
+      c.stop();
+      c.run();
+      await c.waitSynced();
+      expect(c.doc("cards", "offline-demo").values().votes).toBe(2);
+      expect(c.pendingCount).toBe(0);
+      expect(statuses).toContain("synced");
+      const observer = await Client.create({ url, token, schemas: { cards: { votes: "counter" } } });
+      try {
+        observer.subscribe("cards", "");
+        observer.run();
+        await observer.waitSynced();
+        expect(observer.doc("cards", "offline-demo").values().votes).toBe(2);
+      } finally { observer.stop(); }
+    } finally { c.stop(); }
+  }, 30_000);
+
   it("converges with a Go client across every field type", async () => {
     const ts = await Client.create({
       url,

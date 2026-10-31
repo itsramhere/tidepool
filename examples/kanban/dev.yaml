@@ -1,0 +1,13 @@
+# Development config for the kanban demo: dev_mode enables the unauthenticated
+# /dev/token endpoint the demo's user switcher uses. Run from the repo root:
+#   go run ./cmd/tidepoold --config examples/kanban/dev.yaml
+node_id: demo
+listen: "127.0.0.1:7100"
+data_dir: data/demo
+fsync: always
+jwt_secret: demo-secret-change-me
+dev_mode: true
+rules_file: examples/kanban/rules.yaml
+max_ops_per_push: 1000
+session_send_buffer: 1024
+peers: []

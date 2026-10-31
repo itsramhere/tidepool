@@ -1,7 +1,7 @@
 // Op model (PLAN.md §4.3), mirroring internal/crdt/op.go. Lamports and seqs
 // are `number`: JSON-safe integers up to 2^53, far beyond any realistic
 // document lifetime.
-import { errInvalid } from "./errors";
+import { errInvalid } from "./errors.js";
 
 export type ActorID = string;
 

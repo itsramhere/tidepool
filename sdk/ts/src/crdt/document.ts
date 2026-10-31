@@ -1,14 +1,14 @@
 // Document: one replicated document (PLAN.md §4.4), mirroring
 // internal/crdt/document.go — same checks, same order, mutating nothing
 // when any check fails.
-import type { DocKey, Op, OpID } from "./op";
-import { errDuplicate, errInvalid, errOutOfOrder, errMissingDeps, CrdtError } from "./errors";
-import { validateActor, validateField, validateKey } from "./op";
-import { allowedKind, type FieldType, type Schema } from "./schema";
-import { Counter } from "./counter";
-import { ORSet } from "./orset";
-import { Register } from "./register";
-import { RGA } from "./rga";
+import type { DocKey, Op, OpID } from "./op.js";
+import { errDuplicate, errInvalid, errOutOfOrder, errMissingDeps, CrdtError } from "./errors.js";
+import { validateActor, validateField, validateKey } from "./op.js";
+import { allowedKind, type FieldType, type Schema } from "./schema.js";
+import { Counter } from "./counter.js";
+import { ORSet } from "./orset.js";
+import { Register } from "./register.js";
+import { RGA } from "./rga.js";
 
 /** FieldState is one field's CRDT state: type plus exactly one state object. */
 export interface FieldState {

@@ -1,7 +1,7 @@
 // Last-writer-wins register (PLAN.md §4.5), mirroring internal/crdt/register.go.
-import type { Op } from "./op";
-import { errInvalid, type CrdtError } from "./errors";
-import { parseScalar } from "./value";
+import type { Op } from "./op.js";
+import { errInvalid, type CrdtError } from "./errors.js";
+import { parseScalar } from "./value.js";
 
 export class Register {
   lamport = 0;

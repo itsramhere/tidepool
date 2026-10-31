@@ -1,6 +1,6 @@
 // Grow-only counter (PLAN.md §4.5), mirroring internal/crdt/counter.go.
-import type { Op } from "./op";
-import { errInvalid } from "./errors";
+import type { Op } from "./op.js";
+import { errInvalid } from "./errors.js";
 
 export class Counter {
   n = 0;

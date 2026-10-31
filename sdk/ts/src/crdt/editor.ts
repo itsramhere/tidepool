@@ -2,13 +2,13 @@
 // mirroring internal/crdt/editor.go: it stamps seq from the document's VV
 // and lamport from its maxLamport, applies each op immediately, and returns
 // the ops it created so callers can queue and push them.
-import type { Op, OpID } from "./op";
-import { errInvalid, errNotFound } from "./errors";
-import { isSingleCodePoint } from "./value";
-import type { Schema } from "./schema";
-import type { Document } from "./document";
-import type { ORSet } from "./orset";
-import type { RGA } from "./rga";
+import type { Op, OpID } from "./op.js";
+import { errInvalid, errNotFound } from "./errors.js";
+import { isSingleCodePoint } from "./value.js";
+import type { Schema } from "./schema.js";
+import type { Document } from "./document.js";
+import type { ORSet } from "./orset.js";
+import type { RGA } from "./rga.js";
 
 export class Editor {
   constructor(

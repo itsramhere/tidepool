@@ -111,6 +111,63 @@ docker compose -f deploy/docker-compose.yml up
 # clients: ws://localhost:7200/v1/sync, :7201, :7202
 ```
 
+## Try it: collaborative kanban
+
+![Two windows edit offline, reconnect, and move a card between board shapes](docs/kanban-demo.gif)
+
+Use Go plus Node.js 22.12+ (or 20.19+). From the repository root, start the
+demo node in one terminal:
+
+```powershell
+go run ./cmd/tidepoold --config examples/kanban/dev.yaml
+```
+
+In another terminal, build the local SDK, install the demo, and start Vite:
+
+```powershell
+npm --prefix sdk/ts ci
+npm --prefix sdk/ts run build
+cd examples/kanban
+npm ci
+npm run dev
+```
+
+Open the printed Vite URL in two windows. Each window has a separate actor,
+even when both select Alice. Then follow this roughly 60-second walkthrough:
+
+1. On board **b1**, click **+ new card**. Edit its title (Enter or blur to save),
+   description, labels (Enter), and checklist. The second window updates live.
+2. In the first window, click **Go offline**. Change the description and vote.
+   Edits appear immediately and the pending counter grows.
+3. In the second window, vote and add a different label while still online.
+4. Click **Go online** in the first window. Both show the merged description,
+   labels, and votes; pending returns to zero and status becomes **synced**.
+5. Change a card's **Column** to move it to doing/done. Change its **Board** to
+   **b2**: it leaves b1 in both windows. Select b2 in the header to receive it
+   through the new `doc.board == "b2"` shape. **Archive card** moves it outside
+   both demo boards.
+6. Switch users in the header to try distinct identities. A user's queued edits
+   survive switching away and back within that window.
+
+The demo uses memory storage: keep the window open while offline; a reload
+discards unconfirmed edits. Confirmed data lives in `data/demo`. Its dedicated
+rules allow shared editing of every card. The unauthenticated `/dev/token?uid=`
+endpoint is mounted only with `dev_mode: true`; the included config binds to
+loopback. Leave dev mode disabled on deployed nodes. To use another node, set
+`VITE_SERVER_URL` before starting Vite.
+
+To repeat the browser verification and regenerate the GIF (requires FFmpeg on
+PATH), run from `examples/kanban`:
+
+```powershell
+npx playwright install chromium
+npm run demo:record
+```
+
+The script starts an isolated node with temporary storage and two browser
+sessions, asserts convergence and board move-in/out, captures real screenshots,
+then shuts down its node and removes the temporary data.
+
 ## Wire protocol
 
 WebSocket text frames, one JSON object per frame (`hello`/`welcome`,
@@ -157,8 +214,9 @@ replication without consensus (0003), and the shape-matching full scan
 
 ## Status
 
-Milestones M0–M10 are complete: CRDT core with cross-language conformance
+Milestones M0–M11 are complete: CRDT core with cross-language conformance
 vectors, durable storage, the single-node server, the Go and TypeScript
 client SDKs, CEL authorization rules, shape-based partial replication, and
-multi-node replication with the chaos test. Next up: the kanban demo app,
-observability and benchmarks, and documentation polish.
+multi-node replication with the chaos test, and the collaborative offline-first
+kanban demo. Remaining milestones cover observability, benchmarks, and
+documentation polish.
