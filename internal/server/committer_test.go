@@ -444,8 +444,29 @@ func dialTinyBuffer(t *testing.T, ts *httptest.Server) *websocket.Conn {
 	return conn
 }
 
+// tinySendListener pins the server side of every accepted connection to a
+// 4 KiB send buffer. Linux autotunes the send buffer past the whole ~1.8 MiB
+// slow-consumer flood (tcp_wmem defaults allow ~4 MiB), so the server's
+// writer would never block and the bounded send queue would never fill;
+// with the buffer pinned, a stalled peer blocks the writer within a few KiB
+// on every platform.
+type tinySendListener struct {
+	net.Listener
+}
+
+func (l tinySendListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err == nil {
+		if tcp, ok := c.(*net.TCPConn); ok {
+			_ = tcp.SetWriteBuffer(4096)
+		}
+	}
+	return c, err
+}
+
 func TestSlowConsumerDisconnected(t *testing.T) {
-	ts, _ := newTestServer(t, func(cfg *Config) { cfg.SessionSendBuffer = 2 })
+	ts, srv := newTestServerOnListener(t, func(cfg *Config) { cfg.SessionSendBuffer = 2 },
+		func(l net.Listener) net.Listener { return tinySendListener{l} })
 	reader := dialTinyBuffer(t, ts)
 	hello(t, reader, bobActor)
 	send(t, reader, protocol.NewSub("s", "cards", "", nil))
@@ -454,20 +475,43 @@ func TestSlowConsumerDisconnected(t *testing.T) {
 	pusher := dial(t, ts)
 	hello(t, pusher, aliceActor)
 
-	// Two pushes of 15 ops with ~60 KiB values each: megabytes toward a
-	// client that stopped reading with a 4 KiB TCP buffer, so the server's
-	// send buffer fills, its bounded writeCh fills, and the session must be
-	// closed.
+	// A small op first: its ack plus author echo exactly fill the 2-slot
+	// send queue and drain through the pinned 4 KiB server send buffer, so
+	// ordinary traffic still works end to end. It seeds doc "big" so the
+	// flood's seqs stay contiguous for that document's version vector.
+	send(t, pusher, protocol.NewPush(1, []crdt.Op{validSetOp(t, aliceActor, 1, "big", "title", "hi")}))
+	if results := mustAck(t, pusher, 1); results[0].Status != protocol.StatusOK {
+		t.Fatalf("small push = %q, want ok", results[0].Status)
+	}
+
+	// One push of 15 ops with ~60 KiB values each toward a client that
+	// stopped reading with a 4 KiB TCP buffer: the reader's writer blocks
+	// inside the first 60 KiB frame (the pinned socket buffers hold only a
+	// few KiB), the 2-slot send queue fills, and the next enqueue closes the
+	// session.
+	//
+	// The pusher must not mustAck this push: its own 60 KiB G2 echoes fill
+	// the same 2-slot queue and closeConn discards the queued ack. Wait for
+	// the commit instead — the broadcast, and with it the reader's
+	// disconnect, follows immediately.
 	big := strings.Repeat("x", 60*1024)
-	for push := 0; push < 2; push++ {
-		ops := make([]crdt.Op, 0, 15)
-		for i := 0; i < 15; i++ {
-			ops = append(ops, validSetOp(t, aliceActor, uint64(push*15+i+1), "big", "title", big))
+	ops := make([]crdt.Op, 0, 15)
+	for i := 0; i < 15; i++ {
+		ops = append(ops, validSetOp(t, aliceActor, uint64(i+2), "big", "title", big))
+	}
+	send(t, pusher, protocol.NewPush(2, ops))
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		last, err := srv.store.LastFeedSeq()
+		if err != nil {
+			t.Fatalf("LastFeedSeq: %v", err)
 		}
-		send(t, pusher, protocol.NewPush(uint64(push+1), ops))
-		if results := mustAck(t, pusher, uint64(push+1)); results[0].Status != protocol.StatusOK {
-			t.Fatalf("push %d = %q, want ok", push, results[0].Status)
+		if last == 16 {
+			break
 		}
+		if time.Now().After(deadline) {
+			t.Fatalf("LastFeedSeq = %d after flood push, want 16", last)
+		}
+		time.Sleep(2 * time.Millisecond)
 	}
 
 	// The reader session gets closed. Data already flushed into kernel

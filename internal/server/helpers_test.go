@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -45,6 +46,14 @@ var testSchemas = func() *schema.Config {
 // newTestServer starts a Server over a memory store on an httptest server.
 func newTestServer(t *testing.T, mutate func(*Config)) (*httptest.Server, *Server) {
 	t.Helper()
+	return newTestServerOnListener(t, mutate, nil)
+}
+
+// newTestServerOnListener is newTestServer with an optional listener
+// decorator, applied before the server starts accepting (used to pin socket
+// buffer sizes for the slow-consumer test).
+func newTestServerOnListener(t *testing.T, mutate func(*Config), wrap func(net.Listener) net.Listener) (*httptest.Server, *Server) {
+	t.Helper()
 	cfg := &Config{
 		NodeID:            "test-node",
 		Listen:            "unused-by-tests",
@@ -61,7 +70,11 @@ func newTestServer(t *testing.T, mutate func(*Config)) (*httptest.Server, *Serve
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
-	ts := httptest.NewServer(srv.Handler())
+	ts := httptest.NewUnstartedServer(srv.Handler())
+	if wrap != nil {
+		ts.Listener = wrap(ts.Listener)
+	}
+	ts.Start()
 	t.Cleanup(func() {
 		ts.Close()
 		srv.Stop()
